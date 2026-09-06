@@ -1,0 +1,1533 @@
+<!DOCTYPE html>
+<html lang="es-CO">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MeridianTech — Inteligencia artificial, software y automatización</title>
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self';">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta http-equiv="Referrer-Policy" content="strict-origin-when-cross-origin">
+<meta http-equiv="Permissions-Policy" content="geolocation=(), microphone=(), camera=(), payment=()">
+
+<meta name="description" content="Analizamos cómo funciona tu negocio, encontramos el proceso que más te cuesta y construimos el sistema que lo ejecuta solo. Automatización con inteligencia artificial para empresas en Colombia.">
+<meta name="theme-color" content="#000000">
+<link rel="icon" type="image/png" href="assets/favicon.png">
+
+<!-- MeridianTech · landing -->
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" crossorigin="anonymous">
+
+<style>
+:root{
+  --black:#000000;
+  --surf:#0A0B0F;
+  --surf2:#12141B;
+  --line:#1C1E26;
+  --line-2:#2A2D38;
+  --mut:#6E7383;
+  --mut-2:#9AA0AF;
+  --txt:#EDEFF5;
+  --white:#FFFFFF;
+  --blue:#2B4BFF;
+  --blue-lt:#7FA2FF;
+  --green:#3FBF8F;
+  --sans:'Archivo',system-ui,-apple-system,'Segoe UI',sans-serif;
+  --mono:'IBM Plex Mono',ui-monospace,Menlo,monospace;
+  /* radios: nada cuadrado */
+  --r-sm:10px;
+  --r-md:16px;
+  --r-lg:24px;
+  --r-xl:32px;
+  --r-pill:999px;
+}
+*,*::before,*::after{box-sizing:border-box;}
+html{-webkit-text-size-adjust:100%;}
+body{
+  margin:0;background:var(--black);color:var(--txt);
+  font-family:var(--sans);font-size:1.0625rem;line-height:1.6;
+  -webkit-font-smoothing:antialiased;overflow-x:hidden;
+}
+body.lock{overflow:hidden;height:100vh;}
+canvas{display:block;}
+a{color:inherit;text-decoration:none;}
+:focus-visible{outline:2px solid var(--blue-lt);outline-offset:4px;}
+.sr{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0;}
+
+.wrap{max-width:1320px;margin:0 auto;padding:0 clamp(18px,4vw,54px);}
+
+/* ═══ FONDO GLOBAL (shader WebGL) ═══
+   Fijo al viewport, detrás de todo. z-index 0 y contenido en 1 —
+   nunca negativo, que desaparece si un ancestro crea contexto de apilamiento. */
+#bg{position:fixed;inset:0;z-index:0;pointer-events:none;background:var(--black);}
+#bg canvas{width:100%;height:100%;display:block;opacity:0;transition:opacity 1.8s ease;}
+#bg canvas.on{opacity:.55;}
+#bg .scrim{
+  position:absolute;inset:0;
+  background:radial-gradient(125% 85% at 50% 22%,transparent 0%,rgba(0,0,0,.35) 48%,rgba(0,0,0,.74) 100%);
+}
+#bg .grain{
+  position:absolute;inset:0;opacity:.045;
+  background-image:url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADAAAAAwBAMAAAClLOS0AAAAElBMVEUAAAAAAAAAAAAAAAAAAAAAAADgKxmiAAAABnRSTlMCCgkGBAVJOAVJAAAASklEQVQ4y2NgGAWjYBSMglEwCgY/YGRgZBQUYmJiZGQEkYwMjIyMgoKCjIyMIJKBgRFIMjIyAklGRkYGRkFBYEcwMDIyMjAOUQAA1I4HwVwZAkYAAAAASUVORK5CYII=");
+  background-size:200px;background-repeat:repeat;
+}
+/* Solo el contenido necesita subir por encima del shader.
+   OJO: no usar body > *:not(#bg) — :not(#id) pesa como un id y
+   sobrescribía el position:fixed y el z-index del menú. */
+main{position:relative;z-index:1;}
+body > .wrap{position:relative;z-index:1;}
+
+/* ═══ INTRO ═══ */
+#veil{
+  position:fixed;inset:0;z-index:90;background:var(--black);
+  pointer-events:none;transition:opacity .8s ease .15s;
+}
+#veil.gone{opacity:0;}
+#count{
+  position:fixed;left:0;right:0;bottom:6vh;z-index:91;text-align:center;
+  font-family:var(--mono);font-size:.8125rem;font-weight:500;letter-spacing:.2em;
+  color:var(--white);transition:opacity .4s ease;
+}
+#count.gone{opacity:0;}
+#skip{
+  position:fixed;right:clamp(18px,4vw,54px);bottom:6vh;z-index:92;
+  font-family:var(--mono);font-size:.625rem;letter-spacing:.18em;text-transform:uppercase;
+  color:var(--mut);background:none;border:none;cursor:pointer;transition:opacity .4s,color .2s;
+}
+#skip:hover{color:var(--txt);}
+#skip.gone{opacity:0;pointer-events:none;}
+
+/* ═══ NAV ═══ */
+.nav{
+  position:fixed;top:0;left:0;right:0;z-index:60;
+  display:flex;align-items:center;justify-content:space-between;
+  padding:20px clamp(18px,4vw,54px);
+  opacity:0;transition:opacity .7s ease .3s;
+}
+.nav.in{opacity:1;}
+.nav-m{display:flex;align-items:center;gap:10px;font-family:var(--mono);font-size:.6875rem;letter-spacing:.2em;text-transform:uppercase;color:var(--white);}
+.nav-mk{width:22px;height:22px;display:block;flex:0 0 auto;overflow:visible;}
+.nav-r{position:relative;display:flex;align-items:center;gap:clamp(14px,2.5vw,30px);}
+.nav-btn{
+  display:inline-flex;align-items:center;gap:9px;cursor:pointer;
+  font-family:var(--mono);font-size:.6875rem;letter-spacing:.16em;text-transform:uppercase;
+  color:var(--white);padding:9px 16px;
+  background:rgba(255,255,255,.05);border:1px solid var(--line-2);
+  border-radius:var(--r-pill);transition:background .25s ease,border-color .25s ease;
+}
+.nav-btn:hover{background:rgba(255,255,255,.11);border-color:var(--mut);}
+.nav-bars{display:inline-flex;flex-direction:column;gap:4px;width:17px;}
+.nav-bars i{display:block;height:1px;background:currentColor;transition:transform .35s ease,opacity .25s ease;}
+.nav-btn[aria-expanded="true"] .nav-bars i:first-child{transform:translateY(2.5px) rotate(45deg);}
+.nav-btn[aria-expanded="true"] .nav-bars i:last-child{transform:translateY(-2.5px) rotate(-45deg);}
+
+/* ═══ MENÚ — panel pequeño colgado de la barra ═══
+   No cubre la página, no bloquea el scroll y no toca el hero. */
+/* fijo al viewport y hermano del header, NO hijo suyo: dentro del
+   header quedaba atrapado en su contexto de apilamiento (z-index 60)
+   y por eso el panel se veía por debajo del contenido. */
+#menu{
+  position:fixed;top:66px;right:clamp(14px,4vw,50px);z-index:85;
+  width:min(310px,calc(100vw - 28px));
+  background:rgba(9,10,13,.98);border:1px solid var(--line-2);
+  border-radius:var(--r-lg);padding:14px 12px 14px;
+  box-shadow:0 24px 60px rgba(0,0,0,.65);
+  opacity:0;visibility:hidden;transform:translateY(-10px) scale(.98);
+  transform-origin:top right;
+  transition:opacity .28s ease,transform .34s cubic-bezier(.16,1,.3,1),visibility .34s;
+}
+#menu.open{opacity:1;visibility:visible;transform:none;}
+.mn-k{
+  font-family:var(--mono);font-size:.5625rem;letter-spacing:.2em;text-transform:uppercase;
+  color:var(--mut);margin:0 0 10px;padding:0 12px;
+}
+.mn-l{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:1px;}
+.mn-i{--arw:17px;opacity:0;transform:translateX(-6px);transition:opacity .3s ease,transform .34s ease;}
+#menu.open .mn-i{opacity:1;transform:none;}
+.mn-a{
+  display:flex;align-items:center;gap:7px;padding:10px 12px;
+  color:var(--mut-2);text-decoration:none;
+  border-radius:var(--r-pill);
+  transition:color .25s ease,background .25s ease;
+}
+.mn-a:hover,.mn-a:focus-visible{background:rgba(255,255,255,.07);}
+.mn-n{
+  font-family:var(--mono);font-size:.5625rem;letter-spacing:.12em;color:var(--mut);
+  width:2.1em;flex:0 0 auto;transition:color .25s ease;
+}
+.mn-arw{
+  width:var(--arw);height:var(--arw);flex:0 0 auto;
+  transform:translateX(-100%);opacity:0;color:var(--blue-lt);
+  transition:transform .25s ease-out,opacity .25s ease-out;
+}
+.mn-t{
+  display:block;font-size:.9375rem;font-weight:600;letter-spacing:-.014em;line-height:1.25;
+  transform:translateX(calc(-1 * (var(--arw) + 7px)));
+  transition:transform .25s ease-out,color .25s ease-out;
+}
+.mn-a:hover .mn-arw,.mn-a:focus-visible .mn-arw{transform:none;opacity:1;}
+.mn-a:hover .mn-t,.mn-a:focus-visible .mn-t{transform:none;color:var(--white);}
+.mn-a:hover .mn-n,.mn-a:focus-visible .mn-n{color:var(--blue-lt);}
+.mn-foot{margin:12px 12px 0;padding-top:14px;border-top:1px solid var(--line);}
+.mn-foot .btn{width:100%;justify-content:center;font-size:.8125rem;padding:12px 14px;}
+.mn-soc{display:flex;gap:8px;margin-top:10px;}
+.mn-soc a{
+  flex:1;display:inline-flex;align-items:center;justify-content:center;gap:7px;
+  font-family:var(--mono);font-size:.5625rem;letter-spacing:.12em;text-transform:uppercase;
+  color:var(--mut-2);border:1px solid var(--line-2);border-radius:var(--r-pill);
+  padding:9px 6px;text-decoration:none;transition:color .25s,border-color .25s,background .25s;
+}
+.mn-soc a:hover{color:var(--white);border-color:var(--mut);background:rgba(255,255,255,.06);}
+.mn-soc svg{width:13px;height:13px;flex:0 0 auto;}
+
+/* el encabezado fijo no debe tapar el destino de los anclajes */
+.hero,.sec,.cl{scroll-margin-top:72px;}
+.nav-l{font-family:var(--mono);font-size:.6875rem;letter-spacing:.16em;text-transform:uppercase;color:var(--white);}
+
+/* ═══ HERO ═══ */
+.hero{min-height:100svh;display:flex;flex-direction:column;justify-content:center;position:relative;}
+/* LOGOTIPO — vectorial y tipográfico, sin imágenes.
+   Monograma en SVG que se dibuja trazo a trazo, palabra en Archivo 800
+   con revelado letra por letra, y el metal como degradado sobre el texto. */
+.wm{position:relative;margin:0 auto;width:min(100%,960px);display:block;text-align:center;}
+
+.wm-badge{
+  position:relative;display:block;margin:0 auto clamp(16px,2.8vh,32px);
+  width:clamp(80px,10.5vw,140px);aspect-ratio:1;
+  transform:translateY(var(--pl,0px));will-change:transform;
+}
+.wm-mark{position:relative;z-index:2;width:100%;height:100%;display:block;overflow:visible;}
+.mk-ring,.mk-m{
+  stroke-dashoffset:var(--len,300);
+  transition:stroke-dashoffset 1.6s cubic-bezier(.4,0,.2,1) .15s;
+}
+.wm.in .mk-ring{stroke-dashoffset:0;}
+.wm.in .mk-m{stroke-dashoffset:0;transition-delay:.5s;transition-duration:1.25s;}
+
+.wm-txt{display:block;transform:translateY(var(--pl,0px));will-change:transform;}
+
+/* la palabra: degradado de metal recortado sobre el texto */
+.wm-name{
+  display:flex;justify-content:center;flex-wrap:nowrap;
+  font-size:clamp(2.35rem,12.4vw,10.5rem);font-weight:800;line-height:.84;
+  letter-spacing:-.055em;text-transform:uppercase;
+  background:linear-gradient(177deg,#FFFFFF 0%,#EDF2FF 30%,#9CB4EC 66%,#4B69D6 100%);
+  -webkit-background-clip:text;background-clip:text;color:transparent;
+}
+.wm-name > span{display:inline-block;overflow:hidden;padding-bottom:.04em;}
+.wm-name i{
+  display:inline-block;font-style:normal;transform:translateY(112%);
+  transition:transform 1.05s cubic-bezier(.16,1,.3,1);
+}
+.wm.in .wm-name i{transform:none;}
+
+/* TECH entre dos filetes que se abren */
+.wm-sub{
+  display:flex;align-items:center;justify-content:center;
+  gap:clamp(10px,2vw,24px);margin-top:clamp(6px,1.4vh,16px);
+}
+.wm-rule{
+  display:block;height:1px;flex:1 1 auto;max-width:clamp(44px,13vw,200px);
+  background:linear-gradient(90deg,transparent,var(--blue));
+  transform:scaleX(0);transform-origin:right center;
+  transition:transform 1.1s cubic-bezier(.16,1,.3,1) .6s;
+}
+.wm-rule + .wm-rule,.wm-sub .wm-rule:last-child{
+  background:linear-gradient(90deg,var(--blue),transparent);transform-origin:left center;
+}
+.wm.in .wm-rule{transform:scaleX(1);}
+.wm-tech{
+  font-weight:600;color:var(--blue-lt);white-space:nowrap;
+  font-size:clamp(.875rem,2.3vw,1.9rem);letter-spacing:.4em;text-indent:.4em;
+  text-transform:uppercase;opacity:0;transition:opacity .9s ease .75s;
+}
+.wm.in .wm-tech{opacity:1;}
+
+.wm-tag{
+  display:block;margin-top:clamp(14px,2.4vh,26px);
+  font-family:var(--mono);font-size:clamp(.5625rem,1.05vw,.75rem);
+  letter-spacing:.32em;text-transform:uppercase;color:var(--mut);
+  opacity:0;transition:opacity .9s ease 1s;
+}
+.wm.in .wm-tag{opacity:1;}
+/* órbita de partículas: prolonga en movimiento el arco del monograma */
+.wm-orbit{
+  position:absolute;left:50%;top:50%;z-index:0;
+  width:210%;aspect-ratio:1;
+  transform:translate(-50%,-50%) translateY(var(--pl,0px)) scale(.45);opacity:0;
+  transition:opacity 1.5s ease .5s,transform 1.7s cubic-bezier(.16,1,.3,1) .4s;
+  pointer-events:none;will-change:transform;
+}
+.wm.in .wm-orbit{opacity:1;transform:translate(-50%,-50%) translateY(var(--pl,0px)) scale(1);}
+.wm-orbit canvas{width:100%;height:100%;}
+/* halo azul detrás del monograma */
+.wm-glow{
+  position:absolute;left:50%;top:50%;z-index:0;
+  width:265%;aspect-ratio:1;transform:translate(-50%,-50%) translateY(var(--pl,0px));will-change:transform;
+  background:radial-gradient(circle,rgba(43,75,255,.42) 0%,rgba(43,75,255,.12) 42%,transparent 68%);
+  mix-blend-mode:screen;opacity:0;pointer-events:none;
+  transition:opacity 1.8s ease .6s;
+}
+.wm.in .wm-glow{opacity:1;animation:halo 7s ease-in-out 2s infinite;}
+@keyframes halo{0%,100%{opacity:.75;}50%{opacity:1;}}
+/* barrido cromado: overlay mantiene el negro en negro y solo
+   levanta el metal, así que no hace falta enmascarar el PNG */
+.wm-sheen{
+  position:absolute;inset:0;z-index:2;pointer-events:none;overflow:hidden;
+  mix-blend-mode:overlay;opacity:0;
+}
+.wm.in .wm-sheen{opacity:1;}
+.wm-sheen::after{
+  content:'';position:absolute;top:-20%;bottom:-20%;left:0;width:38%;
+  background:linear-gradient(100deg,transparent,rgba(255,255,255,.72),transparent);
+  transform:translateX(-160%) skewX(-14deg);
+}
+.wm.in .wm-sheen::after{animation:sheen 8s cubic-bezier(.4,0,.25,1) 1.5s infinite;}
+@keyframes sheen{0%{transform:translateX(-160%) skewX(-14deg);}22%,100%{transform:translateX(420%) skewX(-14deg);}}
+
+.hero-b{
+  display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;
+  gap:28px;margin-top:clamp(34px,6vh,70px);
+  opacity:0;transform:translateY(calc(20px + var(--pl,0px)));will-change:transform;
+  transition:opacity .9s ease .55s,transform .9s cubic-bezier(.16,1,.3,1) .55s;
+}
+.hero-b.in{opacity:1;transform:translateY(var(--pl,0px));}
+
+/* una vez terminado el intro, el transform deja de tener transición
+   para que el paralaje siga al scroll sin arrastre */
+body.settled .wm-badge,body.settled .wm-txt,body.settled .wm-orbit,
+body.settled .wm-glow,body.settled .hero-b{
+  transition:opacity .5s ease;
+}
+.hero-claim{font-size:clamp(1.0625rem,1.9vw,1.4rem);font-weight:500;line-height:1.35;max-width:30ch;margin:0;color:var(--txt);letter-spacing:-.015em;}
+.hero-claim b{color:var(--white);font-weight:600;}
+.hero-r{display:flex;flex-direction:column;gap:14px;align-items:flex-start;}
+.kicker{font-family:var(--mono);font-size:.625rem;letter-spacing:.2em;text-transform:uppercase;color:var(--mut);}
+
+/* ═══ BOTONES ═══ */
+.btn{
+  display:inline-flex;align-items:center;gap:11px;
+  font-size:.9375rem;font-weight:600;letter-spacing:-.005em;
+  padding:15px 28px;background:var(--white);color:var(--black);
+  border:1px solid var(--white);cursor:pointer;
+  border-radius:var(--r-pill);
+  transition:background .25s,color .25s,border-color .25s,transform .2s;
+}
+.btn:active{transform:translateY(1px);}
+.btn:hover{background:var(--blue);border-color:var(--blue);color:var(--white);}
+.btn-o{background:transparent;color:var(--txt);border-color:var(--line-2);}
+.btn-o:hover{background:var(--white);border-color:var(--white);color:var(--black);}
+.btn-xl{font-size:clamp(1rem,1.5vw,1.1875rem);padding:19px 34px;}
+
+/* ═══ MARQUESINA ═══ */
+.mq{border-top:1px solid var(--line);border-bottom:1px solid var(--line);overflow:hidden;padding:16px 0;}
+.mq-t{display:flex;width:max-content;animation:slide 34s linear infinite;}
+.mq-t span{
+  font-family:var(--mono);font-size:.75rem;letter-spacing:.24em;text-transform:uppercase;
+  color:var(--mut-2);padding-right:38px;white-space:nowrap;
+}
+.mq-t span i{color:var(--blue-lt);font-style:normal;}
+@keyframes slide{to{transform:translateX(-50%);}}
+
+/* ═══ SECCIONES ═══ */
+.sec{padding:clamp(76px,13vh,150px) 0;}
+.sec-k{font-family:var(--mono);font-size:.625rem;letter-spacing:.22em;text-transform:uppercase;color:var(--mut);margin:0 0 clamp(26px,5vh,52px);display:flex;gap:14px;align-items:center;}
+.sec-k::after{content:'';flex:1;height:1px;background:var(--line);}
+.sec-k em{font-style:normal;color:var(--blue-lt);}
+
+/* declaración gigante */
+.say{
+  font-size:clamp(1.85rem,6.4vw,5rem);font-weight:700;line-height:1.02;
+  letter-spacing:-.042em;margin:0;color:var(--white);max-width:19ch;
+}
+.say .w{display:inline-block;overflow:hidden;vertical-align:top;}
+.say .w i{display:inline-block;font-style:normal;transform:translateY(105%);transition:transform .85s cubic-bezier(.16,1,.3,1);}
+.say.in .w i{transform:none;}
+.say .q{color:var(--mut);}
+.say-sub{font-size:clamp(1rem,1.5vw,1.1875rem);color:var(--mut-2);max-width:48ch;margin:clamp(22px,4vh,38px) 0 0;}
+
+/* reveal genérico */
+.rv{opacity:0;transform:translateY(24px);transition:opacity .8s ease,transform .8s cubic-bezier(.16,1,.3,1);}
+.rv.in{opacity:1;transform:none;}
+.rv.d1{transition-delay:.08s;} .rv.d2{transition-delay:.16s;} .rv.d3{transition-delay:.24s;}
+
+/* ═══ DEMO ═══ */
+.demo-h{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:flex-end;gap:22px;margin-bottom:30px;}
+.tagx{font-family:var(--mono);font-size:.625rem;letter-spacing:.16em;text-transform:uppercase;color:var(--mut);border:1px solid var(--line-2);padding:7px 13px;border-radius:var(--r-pill);}
+.chips{display:flex;flex-wrap:wrap;gap:9px;list-style:none;margin:0 0 22px;padding:0;}
+.chip{
+  font-family:var(--mono);font-size:.6875rem;letter-spacing:.14em;text-transform:uppercase;
+  background:transparent;color:var(--mut-2);border:1px solid var(--line-2);
+  padding:10px 19px;cursor:pointer;font-weight:500;transition:.2s;
+  border-radius:var(--r-pill);
+}
+.chip:hover{color:var(--white);border-color:var(--mut);}
+.chip[aria-selected="true"]{background:var(--blue);border-color:var(--blue);color:var(--white);}
+.flow{
+  display:grid;grid-template-columns:.9fr 1.1fr;border:1px solid var(--line);
+  background:var(--surf);border-radius:var(--r-lg);overflow:hidden;
+}
+.flow-a{padding:clamp(20px,2.4vw,32px);border-right:1px solid var(--line);}
+.msg{
+  background:var(--surf2);border:1px solid var(--line-2);border-left:2px solid var(--blue);
+  padding:15px 18px;border-radius:var(--r-md);
+}
+.msg-h{display:flex;justify-content:space-between;gap:10px;font-family:var(--mono);font-size:.625rem;letter-spacing:.14em;text-transform:uppercase;color:var(--blue-lt);}
+.msg p{margin:10px 0 0;font-size:1rem;line-height:1.5;color:var(--white);}
+.flow-f{display:flex;flex-wrap:wrap;gap:12px 24px;align-items:center;margin-top:20px;}
+.rerun{font-family:var(--mono);font-size:.6875rem;letter-spacing:.14em;text-transform:uppercase;background:none;border:none;border-bottom:1px solid var(--blue);color:var(--blue-lt);padding:3px 0;cursor:pointer;}
+.rerun:hover{color:var(--white);border-bottom-color:var(--white);}
+.lg{display:flex;gap:18px;flex-wrap:wrap;font-family:var(--mono);font-size:.5625rem;letter-spacing:.14em;text-transform:uppercase;color:var(--mut);}
+.lg i{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:7px;vertical-align:1px;}
+.flow-b{padding:clamp(14px,1.8vw,24px) clamp(20px,2.4vw,32px);}
+.st{position:relative;padding:14px 0 14px 30px;opacity:.24;transition:opacity .45s ease;}
+.st::before{content:'';position:absolute;left:0;top:21px;width:9px;height:9px;border-radius:50%;background:var(--surf2);border:1px solid var(--line-2);transition:.3s;}
+.st::after{content:'';position:absolute;left:4px;top:30px;bottom:-6px;width:1px;background:var(--line);}
+.st:last-child::after{display:none;}
+.st.on{opacity:1;}
+.st.on::before{background:var(--blue);border-color:var(--blue);box-shadow:0 0 0 4px rgba(43,75,255,.18);}
+.st.dn::before{background:var(--green);border-color:var(--green);box-shadow:none;}
+.st-n{font-size:1rem;font-weight:600;letter-spacing:-.01em;color:var(--white);}
+.st-v{font-family:var(--mono);font-size:.75rem;color:var(--mut-2);margin-top:4px;line-height:1.55;word-break:break-word;}
+.st-v b{color:var(--white);font-weight:500;}
+
+/* ═══ MÉTODO ═══ */
+.mt{border-top:1px solid var(--line);}
+.mt-r{
+  display:grid;grid-template-columns:auto 1.1fr 2fr;gap:clamp(16px,3vw,48px);
+  align-items:baseline;padding:clamp(22px,3vh,34px) 0;border-bottom:1px solid var(--line);
+  transition:background .3s;
+}
+.mt-r:hover{background:var(--surf);border-radius:var(--r-md);}
+.mt-n{font-family:var(--mono);font-size:.75rem;color:var(--blue-lt);letter-spacing:.1em;}
+.mt-t{font-size:clamp(1.375rem,3.4vw,2.5rem);font-weight:700;letter-spacing:-.032em;color:var(--white);line-height:1.05;}
+.mt-d{font-size:1rem;color:var(--mut-2);margin:0;}
+
+/* ═══ PROCESOS ═══ */
+.pr{
+  display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--line);
+  border:1px solid var(--line);border-radius:var(--r-lg);overflow:hidden;
+}
+.pr-i{background:var(--black);padding:clamp(20px,2.4vw,30px);transition:background .3s;}
+.pr-i:hover{background:var(--surf);}
+.pr-k{font-family:var(--mono);font-size:.5625rem;letter-spacing:.18em;text-transform:uppercase;color:var(--blue-lt);display:block;margin-bottom:11px;}
+.pr-n{font-size:1.0625rem;font-weight:500;color:var(--txt);display:block;line-height:1.4;letter-spacing:-.012em;}
+
+/* ═══ PLANES ═══ */
+.pl{
+  display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--line);
+  border:1px solid var(--line);border-radius:var(--r-xl);overflow:hidden;
+}
+.pl-c{
+  background:var(--black);padding:clamp(24px,2.6vw,36px) clamp(20px,2.2vw,30px);
+  display:flex;flex-direction:column;
+  /* entran cayendo desde arriba y enfocándose */
+  opacity:0;transform:translateY(-18px);filter:blur(10px);
+  transition:opacity .6s ease,transform .8s cubic-bezier(.16,1,.3,1),filter .8s ease;
+}
+.pl-c.in{opacity:1;transform:none;filter:blur(0);}
+.pl-c:nth-child(2){transition-delay:.13s;}
+.pl-c:nth-child(3){transition-delay:.26s;}
+.pl-c.hi{background:var(--surf);position:relative;}
+.pl-c.hi::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:var(--blue);}
+.pl-t{font-family:var(--mono);font-size:.625rem;letter-spacing:.2em;text-transform:uppercase;color:var(--mut);margin:0 0 8px;}
+.pl-n{font-size:clamp(1.625rem,2.9vw,2.25rem);font-weight:700;letter-spacing:-.036em;color:var(--white);margin:0 0 20px;line-height:1;}
+.pl-p{display:flex;align-items:baseline;gap:8px;margin-bottom:5px;flex-wrap:wrap;}
+/* cifras tabulares: sin esto el contador cambia de ancho en cada
+   fotograma y el precio parece temblar mientras sube */
+.pl-p b{
+  font-size:clamp(1.75rem,3.2vw,2.6rem);font-weight:700;letter-spacing:-.042em;
+  color:var(--white);line-height:1;
+  font-variant-numeric:tabular-nums;font-feature-settings:"tnum" 1;
+}
+.pl-per{font-family:var(--mono);font-size:.625rem;letter-spacing:.12em;text-transform:uppercase;color:var(--mut);}
+.pl-eq{
+  font-family:var(--mono);font-size:.6875rem;letter-spacing:.04em;color:var(--blue-lt);
+  margin:0 0 6px;font-variant-numeric:tabular-nums;
+}
+.pl-imp{font-family:var(--mono);font-size:.75rem;color:var(--mut-2);margin:6px 0 22px;font-variant-numeric:tabular-nums;}
+.pl-imp b{color:var(--txt);font-weight:500;}
+
+/* ── conmutador mensual / anual ── */
+.sw-wrap{display:flex;justify-content:center;margin-bottom:clamp(24px,4vh,42px);}
+.sw{
+  position:relative;display:inline-flex;padding:4px;
+  border:1px solid var(--line-2);background:var(--surf);
+  border-radius:var(--r-pill);
+}
+.sw-ind{
+  position:absolute;top:4px;bottom:4px;left:4px;width:0;z-index:0;
+  background:var(--blue);border-radius:var(--r-pill);
+  transition:transform .55s cubic-bezier(.34,1.42,.64,1),width .55s cubic-bezier(.34,1.42,.64,1);
+}
+.sw-b{
+  position:relative;z-index:1;display:inline-flex;align-items:center;gap:10px;
+  background:none;border:none;cursor:pointer;white-space:nowrap;
+  font-family:var(--sans);font-size:.875rem;font-weight:600;letter-spacing:-.008em;
+  color:var(--mut-2);padding:13px clamp(18px,2.2vw,28px);transition:color .3s ease;
+  border-radius:var(--r-pill);
+}
+.sw-b:hover{color:var(--txt);}
+.sw-b[aria-pressed="true"]{color:var(--white);}
+.sw-tag{
+  font-family:var(--mono);font-size:.5625rem;font-weight:500;letter-spacing:.1em;
+  padding:4px 9px;border:1px solid rgba(255,255,255,.28);color:inherit;
+  border-radius:var(--r-pill);
+}
+@media (prefers-reduced-motion:reduce){ .sw-ind{transition:none;} }
+.pl-l{list-style:none;margin:0 0 26px;padding:0;flex:1;border-top:1px solid var(--line);}
+.pl-l li{display:flex;justify-content:space-between;gap:14px;padding:11px 0;border-bottom:1px solid var(--line);font-size:.9375rem;}
+.pl-l li span{color:var(--mut);font-family:var(--mono);font-size:.6875rem;letter-spacing:.08em;text-transform:uppercase;padding-top:3px;}
+.pl-l li b{color:var(--white);font-weight:600;text-align:right;white-space:nowrap;}
+.pl-note{font-family:var(--mono);font-size:.6875rem;color:var(--mut);margin:22px 0 0;line-height:1.7;letter-spacing:.02em;}
+
+/* ═══ VALOR — se revelan uno a uno al bajar ═══ */
+.vl{border-top:1px solid var(--line);}
+.vl-r{
+  position:relative;display:grid;grid-template-columns:auto 1fr;
+  gap:clamp(16px,3vw,44px);align-items:start;
+  padding:clamp(26px,4.2vh,50px) 0;
+}
+.vl-line{
+  position:absolute;left:0;right:0;bottom:0;height:1px;background:var(--line);
+  transform:scaleX(0);transform-origin:left center;
+  transition:transform 1.15s cubic-bezier(.16,1,.3,1);
+}
+.vl-r.in .vl-line{transform:scaleX(1);}
+.vl-r.act .vl-line{background:linear-gradient(90deg,var(--blue),var(--line) 62%);}
+
+.vl-n{
+  font-family:var(--mono);font-size:.75rem;letter-spacing:.14em;color:var(--mut);
+  padding-top:.55em;opacity:0;transition:opacity .7s ease .05s,color .45s ease;
+}
+.vl-r.in .vl-n{opacity:1;}
+.vl-r.act .vl-n{color:var(--blue-lt);}
+
+.vl-t{
+  margin:0;font-size:clamp(1.3rem,3.7vw,2.65rem);font-weight:700;
+  letter-spacing:-.034em;line-height:1.06;color:var(--mut-2);
+  transition:color .45s ease;
+}
+.vl-r.act .vl-t{color:var(--white);}
+.vl-t span{display:block;overflow:hidden;padding-bottom:.06em;}
+.vl-t i{
+  display:block;font-style:normal;transform:translateY(110%);
+  transition:transform 1s cubic-bezier(.16,1,.3,1) .08s;
+}
+.vl-r.in .vl-t i{transform:none;}
+
+.vl-d{
+  margin:10px 0 0;font-size:1rem;line-height:1.55;color:var(--mut);max-width:58ch;
+  opacity:0;transform:translateY(12px);
+  transition:opacity .8s ease .3s,transform .8s cubic-bezier(.16,1,.3,1) .3s;
+}
+.vl-r.in .vl-d{opacity:1;transform:none;}
+.vl-r.act .vl-d{color:var(--mut-2);}
+
+.vl-foot{
+  margin:clamp(26px,4vh,44px) 0 0;font-size:clamp(1rem,1.6vw,1.1875rem);
+  color:var(--txt);max-width:52ch;
+}
+.vl-foot b{color:var(--white);font-weight:600;}
+
+/* ═══ CIERRE ═══ */
+.cl{position:relative;padding:clamp(84px,15vh,170px) 0 clamp(60px,9vh,100px);}
+.cl h2{font-size:clamp(2rem,7.4vw,6rem);font-weight:800;letter-spacing:-.05em;line-height:.94;color:var(--white);margin:0 0 clamp(24px,4vh,40px);text-transform:uppercase;max-width:16ch;}
+.cl p{font-size:clamp(1rem,1.6vw,1.25rem);color:var(--mut-2);max-width:44ch;margin:0 0 clamp(30px,5vh,44px);}
+.foot{border-top:1px solid var(--line);padding:26px 0 40px;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:16px;font-family:var(--mono);font-size:.625rem;letter-spacing:.16em;text-transform:uppercase;color:var(--mut);}
+.foot-soc{display:flex;gap:10px;}
+.foot-soc a{
+  display:inline-flex;align-items:center;gap:7px;color:var(--mut-2);text-decoration:none;
+  border:1px solid var(--line-2);border-radius:var(--r-pill);padding:8px 15px;
+  transition:color .25s,border-color .25s,background .25s;
+}
+.foot-soc a:hover{color:var(--white);border-color:var(--mut);background:rgba(255,255,255,.06);}
+.foot-soc svg{width:13px;height:13px;flex:0 0 auto;}
+
+/* ═══ RESPONSIVE ═══ */
+@media (max-width:960px){
+  .flow{grid-template-columns:1fr;}
+  .flow-a{border-right:none;border-bottom:1px solid var(--line);}
+  .pr,.pl{grid-template-columns:1fr;}
+  .mt-r{grid-template-columns:auto 1fr;}
+  .mt-d{grid-column:2;}
+  .vl-r{grid-template-columns:1fr;gap:6px;}
+  .vl-n{padding-top:0;}
+}
+@media (max-width:640px){
+  body{font-size:1rem;}
+  .wm{gap:0 .02em;line-height:.9;}
+  .hero-b{flex-direction:column;align-items:flex-start;}
+  .btn{width:100%;justify-content:center;}
+  .hero-r{width:100%;}
+  .say{max-width:none;}
+}
+@media (prefers-reduced-motion:reduce){
+  .wm-badge,.wm-txt,.wm-glow,.hero-b,.rv,.say .w i,.wm-name i,.wm-tech,.wm-tag,.wm-rule{
+    transition:none !important;transform:none !important;opacity:1 !important;animation:none !important;
+  }
+  .wm-orbit{transition:none !important;opacity:1 !important;transform:translate(-50%,-50%) !important;}
+  .mk-ring,.mk-m{stroke-dashoffset:0 !important;transition:none !important;}
+  .wm-rule{transform:scaleX(1) !important;}
+  .wm-sheen{display:none;}
+  .mq-t{animation:none;}
+  .st{opacity:1;}
+  .vl-t i,.vl-d,.vl-n{transition:none !important;transform:none !important;opacity:1 !important;}
+  .vl-line{transition:none !important;transform:scaleX(1) !important;}
+  .vl-t{color:var(--txt) !important;}
+  .pl-c{opacity:1 !important;transform:none !important;filter:none !important;transition:none !important;}
+  #veil{display:none;}
+}
+</style>
+</head>
+<body class="lock">
+
+<a class="sr" href="#main">Saltar al contenido</a>
+
+<div id="bg" aria-hidden="true">
+  <canvas id="grad"></canvas>
+  <div class="scrim"></div>
+  <div class="grain"></div>
+</div>
+
+<noscript><style>#veil,#count,#skip{display:none!important}body{overflow:auto!important;height:auto!important}</style></noscript>
+
+<div id="veil" aria-hidden="true"></div>
+<div id="count" aria-hidden="true">0</div>
+<button id="skip" type="button">Saltar intro</button>
+
+<header class="nav" id="nav">
+  <a class="nav-m" href="#inicio">
+    <svg class="nav-mk" viewBox="0 0 120 120" fill="none" aria-hidden="true">
+      <ellipse cx="60" cy="60" rx="43" ry="43" stroke="#2B4BFF" stroke-width="5" opacity=".65"/>
+      <path d="M18 98 L32 24 L60 66 L88 24 L102 98" stroke="#EDEFF5" stroke-width="13" stroke-linejoin="miter"/>
+    </svg>
+    MeridianTech
+  </a>
+  <div class="nav-r">
+    <button class="nav-btn" id="menuBtn" type="button" aria-expanded="false" aria-controls="menu">
+      <span class="nav-bars" aria-hidden="true"><i></i><i></i></span>Menú
+    </button>
+    <a class="nav-l" data-wa href="https://wa.me/573142162323?text=Hola%2C%20Meridian.%20Quiero%20conocer%20c%C3%B3mo%20pueden%20ayudarme%20a%20automatizar%20y%20transformar%20los%20procesos%20de%20mi%20empresa.%20Me%20gustar%C3%ADa%20recibir%20m%C3%A1s%20informaci%C3%B3n%20y%20agendar%20una%20conversaci%C3%B3n." target="_blank" rel="noopener noreferrer">WhatsApp ↗</a>
+  </div>
+</header>
+
+<nav id="menu" aria-label="Secciones" aria-hidden="true">
+  <p class="mn-k">Índice</p>
+  <ul class="mn-l">
+    <li class="mn-i"><a class="mn-a" href="#problema"><span class="mn-n">01</span><svg class="mn-arw" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="square" aria-hidden="true"><path d="M4 12h15M13 6l6 6-6 6"/></svg><span class="mn-t">El problema</span></a></li>
+    <li class="mn-i"><a class="mn-a" href="#demo"><span class="mn-n">02</span><svg class="mn-arw" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="square" aria-hidden="true"><path d="M4 12h15M13 6l6 6-6 6"/></svg><span class="mn-t">La demostración</span></a></li>
+    <li class="mn-i"><a class="mn-a" href="#metodo"><span class="mn-n">03</span><svg class="mn-arw" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="square" aria-hidden="true"><path d="M4 12h15M13 6l6 6-6 6"/></svg><span class="mn-t">El método</span></a></li>
+    <li class="mn-i"><a class="mn-a" href="#procesos"><span class="mn-n">04</span><svg class="mn-arw" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="square" aria-hidden="true"><path d="M4 12h15M13 6l6 6-6 6"/></svg><span class="mn-t">Qué automatizamos</span></a></li>
+    <li class="mn-i"><a class="mn-a" href="#planes"><span class="mn-n">05</span><svg class="mn-arw" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="square" aria-hidden="true"><path d="M4 12h15M13 6l6 6-6 6"/></svg><span class="mn-t">Planes</span></a></li>
+    <li class="mn-i"><a class="mn-a" href="#valor"><span class="mn-n">06</span><svg class="mn-arw" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="square" aria-hidden="true"><path d="M4 12h15M13 6l6 6-6 6"/></svg><span class="mn-t">Por qué nosotros</span></a></li>
+    <li class="mn-i"><a class="mn-a" href="#cierre"><span class="mn-n">07</span><svg class="mn-arw" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="square" aria-hidden="true"><path d="M4 12h15M13 6l6 6-6 6"/></svg><span class="mn-t">Hablemos</span></a></li>
+  </ul>
+  <div class="mn-foot">
+    <a class="btn" data-wa href="https://wa.me/573142162323?text=Hola%2C%20Meridian.%20Quiero%20conocer%20c%C3%B3mo%20pueden%20ayudarme%20a%20automatizar%20y%20transformar%20los%20procesos%20de%20mi%20empresa.%20Me%20gustar%C3%ADa%20recibir%20m%C3%A1s%20informaci%C3%B3n%20y%20agendar%20una%20conversaci%C3%B3n." target="_blank" rel="noopener noreferrer">Escríbenos por WhatsApp</a>
+    <div class="mn-soc">
+      <a href="https://www.instagram.com/meridiantech.co/?hl=es" target="_blank" rel="noopener noreferrer">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+          <rect x="3" y="3" width="18" height="18" rx="5.4"/>
+          <circle cx="12" cy="12" r="4"/>
+          <circle cx="17.3" cy="6.7" r="1.1" fill="currentColor" stroke="none"/>
+        </svg>Instagram
+      </a>
+      <a href="https://www.facebook.com/profile.php?id=61592046685665" target="_blank" rel="noopener noreferrer">
+        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+          <path d="M22 12.06C22 6.5 17.52 2 12 2S2 6.5 2 12.06c0 5.02 3.66 9.18 8.44 9.94v-7.03H7.9v-2.91h2.54V9.85c0-2.52 1.49-3.91 3.77-3.91 1.09 0 2.23.2 2.23.2v2.46h-1.26c-1.24 0-1.63.78-1.63 1.57v1.89h2.78l-.44 2.91h-2.34V22c4.78-.76 8.44-4.92 8.44-9.94z"/>
+        </svg>Facebook
+      </a>
+    </div>
+  </div>
+</nav>
+
+<main id="main">
+
+<!-- ═══ HERO ═══ -->
+<section class="hero" id="inicio">
+  <div class="wrap">
+    <h1 class="wm" id="wm">
+      <span class="sr">MeridianTech — software, inteligencia artificial y automatización</span>
+
+      <span class="wm-badge" aria-hidden="true">
+        <span class="wm-glow"></span>
+        <span class="wm-orbit"><canvas id="knot"></canvas></span>
+        <svg class="wm-mark" viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <linearGradient id="mkGrad" x1="60" y1="18" x2="60" y2="100" gradientUnits="userSpaceOnUse">
+              <stop offset="0" stop-color="#FFFFFF"/>
+              <stop offset=".42" stop-color="#9CB4EC"/>
+              <stop offset="1" stop-color="#2B4BFF"/>
+            </linearGradient>
+          </defs>
+          <!-- el meridiano -->
+          <ellipse class="mk-ring" cx="60" cy="60" rx="43" ry="43"
+                   stroke="#2B4BFF" stroke-width="1.5" opacity=".55"
+                   style="stroke-dasharray:271;--len:271"/>
+          <!-- la M, un solo trazo continuo -->
+          <path class="mk-m" d="M18 98 L32 24 L60 66 L88 24 L102 98"
+                stroke="url(#mkGrad)" stroke-width="10"
+                stroke-linejoin="miter" stroke-linecap="butt"
+                style="stroke-dasharray:230;--len:230"/>
+        </svg>
+      </span>
+
+      <span class="wm-txt" aria-hidden="true">
+        <span class="wm-name"><span><i>M</i></span><span><i>E</i></span><span><i>R</i></span><span><i>I</i></span><span><i>D</i></span><span><i>I</i></span><span><i>A</i></span><span><i>N</i></span></span>
+        <span class="wm-sub">
+          <i class="wm-rule"></i><span class="wm-tech">Tech</span><i class="wm-rule"></i>
+        </span>
+        <span class="wm-tag">Software · IA · Automatización</span>
+      </span>
+
+      <span class="wm-sheen" aria-hidden="true"></span>
+    </h1>
+    <div class="hero-b" id="herob">
+      <p class="hero-claim">Encontramos el proceso que más le cuesta a tu operación y <b>construimos el sistema que lo ejecuta solo.</b></p>
+      <div class="hero-r">
+        <span class="kicker">Inteligencia artificial · Software · Automatización</span>
+        <a class="btn btn-xl" data-wa href="https://wa.me/573142162323?text=Hola%2C%20Meridian.%20Quiero%20conocer%20c%C3%B3mo%20pueden%20ayudarme%20a%20automatizar%20y%20transformar%20los%20procesos%20de%20mi%20empresa.%20Me%20gustar%C3%ADa%20recibir%20m%C3%A1s%20informaci%C3%B3n%20y%20agendar%20una%20conversaci%C3%B3n." target="_blank" rel="noopener noreferrer">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.45 1.32 4.95L2 22l5.25-1.38c1.45.79 3.08 1.21 4.79 1.21 5.46 0 9.91-4.45 9.91-9.91C21.95 6.45 17.5 2 12.04 2zm5.8 14.02c-.24.68-1.42 1.31-1.96 1.36-.54.05-1.04.24-3.51-.73-2.98-1.17-4.87-4.24-5.02-4.44-.15-.2-1.2-1.6-1.2-3.05s.76-2.16 1.03-2.46c.27-.29.59-.37.78-.37s.39 0 .56.01c.19.01.44-.07.68.52.24.59.83 2.03.9 2.18.07.15.12.32.02.51-.1.2-.15.32-.29.5-.15.17-.31.39-.44.52-.15.15-.3.31-.13.6.17.29.76 1.25 1.63 2.03 1.12 1 2.06 1.31 2.35 1.46.29.15.46.12.63-.07.17-.2.73-.85.93-1.14.2-.29.39-.24.66-.15.27.1 1.71.81 2 .96.29.15.49.22.56.34.07.13.07.75-.17 1.43z"/></svg>
+          Escríbenos por WhatsApp
+        </a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ MARQUESINA ═══ -->
+<div class="mq" aria-hidden="true">
+  <div class="mq-t">
+    <span>Atención automática <i>·</i> Calificación de leads <i>·</i> Reservas y citas <i>·</i> Pedidos <i>·</i> Pagos <i>·</i> CRM <i>·</i> Integraciones <i>·</i> Agentes de IA <i>·</i> </span>
+    <span>Atención automática <i>·</i> Calificación de leads <i>·</i> Reservas y citas <i>·</i> Pedidos <i>·</i> Pagos <i>·</i> CRM <i>·</i> Integraciones <i>·</i> Agentes de IA <i>·</i> </span>
+  </div>
+</div>
+
+<!-- ═══ DECLARACIÓN ═══ -->
+<section class="sec" id="problema">
+  <div class="wrap">
+    <p class="sec-k rv"><em>01</em> El problema</p>
+    <h2 class="say" data-say>La mayoría de las empresas paga sueldos por hacer <span class="q">lo que un sistema haría solo.</span></h2>
+    <p class="say-sub rv d1">Responder los mismos mensajes. Copiar datos de un lado a otro. Recordarle a un cliente que no contestó. Confirmar lo que ya estaba confirmado. No es falta de gente: es falta de sistema.</p>
+  </div>
+</section>
+
+<!-- ═══ DEMO ═══ -->
+<section class="sec" id="demo">
+  <div class="wrap">
+    <p class="sec-k rv"><em>02</em> La demostración</p>
+    <div class="demo-h rv">
+      <h2 class="say" style="max-width:24ch;font-size:clamp(1.5rem,4.2vw,3.25rem)">Así se ve un proceso ejecutándose.</h2>
+      <span class="tagx">Demostración conceptual</span>
+    </div>
+    <ul class="chips rv d1" role="tablist" aria-label="Tipo de proceso">
+      <li role="presentation"><button class="chip" role="tab" aria-selected="true" data-case="reserva">Reserva</button></li>
+      <li role="presentation"><button class="chip" role="tab" aria-selected="false" data-case="pedido">Pedido</button></li>
+      <li role="presentation"><button class="chip" role="tab" aria-selected="false" data-case="cotizacion">Cotización</button></li>
+    </ul>
+    <div class="flow rv d2">
+      <div class="flow-a">
+        <div class="msg">
+          <div class="msg-h"><span id="dc">WhatsApp</span><span id="dh">19:42</span></div>
+          <p id="dm">Buenas tardes, tienen disponibilidad para 6 personas el sábado a las 8?</p>
+        </div>
+        <div class="flow-f">
+          <button class="rerun" id="rerun" type="button">Ejecutar de nuevo</button>
+          <div class="lg">
+            <span><i style="background:var(--blue)"></i>Procesando</span>
+            <span><i style="background:var(--green)"></i>Resuelto</span>
+          </div>
+        </div>
+      </div>
+      <div class="flow-b" id="ds" aria-live="polite"></div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ MÉTODO ═══ -->
+<section class="sec" id="metodo">
+  <div class="wrap">
+    <p class="sec-k rv"><em>03</em> El método</p>
+    <h2 class="say" data-say style="max-width:22ch">No instalamos bots. <span class="q">Construimos sistemas.</span></h2>
+    <div class="mt" style="margin-top:clamp(34px,6vh,64px)">
+      <div class="mt-r rv"><span class="mt-n">01</span><span class="mt-t">Analizar</span><p class="mt-d">Entendemos cómo entra el trabajo, quién lo toca y dónde se detiene.</p></div>
+      <div class="mt-r rv"><span class="mt-n">02</span><span class="mt-t">Detectar</span><p class="mt-d">Identificamos qué se repite y qué puede ejecutarse sin una persona.</p></div>
+      <div class="mt-r rv"><span class="mt-n">03</span><span class="mt-t">Diseñar</span><p class="mt-d">Definimos el flujo, las reglas de decisión y qué pasa cuando algo se sale del guion.</p></div>
+      <div class="mt-r rv"><span class="mt-n">04</span><span class="mt-t">Construir</span><p class="mt-d">Desarrollamos el sistema: lógica, base de datos, capa de IA e interfaz.</p></div>
+      <div class="mt-r rv"><span class="mt-n">05</span><span class="mt-t">Integrar</span><p class="mt-d">Lo conectamos con los canales y las herramientas que ya usas.</p></div>
+      <div class="mt-r rv"><span class="mt-n">06</span><span class="mt-t">Optimizar</span><p class="mt-d">Medimos, ajustamos reglas y ampliamos el alcance con datos reales de uso.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ PROCESOS ═══ -->
+<section class="sec" id="procesos">
+  <div class="wrap">
+    <p class="sec-k rv"><em>04</em> Qué automatizamos</p>
+    <h2 class="say" data-say style="max-width:20ch;font-size:clamp(1.75rem,5.4vw,4rem)">Procesos, <span class="q">no sectores.</span></h2>
+    <p class="say-sub rv d1">Trabajamos sobre el proceso, así que el sector importa menos de lo que parece. Si es repetitivo, tiene reglas y hoy lo hace alguien a mano, se puede construir.</p>
+    <div class="pr rv d2" style="margin-top:clamp(30px,5vh,54px)">
+      <div class="pr-i"><span class="pr-k">Atención</span><span class="pr-n">Respuesta automática por WhatsApp y redes</span></div>
+      <div class="pr-i"><span class="pr-k">Comercial</span><span class="pr-n">Calificación y enrutamiento de leads</span></div>
+      <div class="pr-i"><span class="pr-k">Comercial</span><span class="pr-n">Seguimiento de clientes y cotizaciones</span></div>
+      <div class="pr-i"><span class="pr-k">Agenda</span><span class="pr-n">Reservas, citas y confirmaciones</span></div>
+      <div class="pr-i"><span class="pr-k">Operación</span><span class="pr-n">Recepción y procesamiento de pedidos</span></div>
+      <div class="pr-i"><span class="pr-k">Operación</span><span class="pr-n">Verificación y registro de pagos</span></div>
+      <div class="pr-i"><span class="pr-k">Datos</span><span class="pr-n">Actualización de CRM y hojas de cálculo</span></div>
+      <div class="pr-i"><span class="pr-k">Sistemas</span><span class="pr-n">Integración entre plataformas que no se hablan</span></div>
+      <div class="pr-i"><span class="pr-k">Interno</span><span class="pr-n">Flujos entre empleados, sistemas y clientes</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ PLANES ═══ -->
+<section class="sec" id="planes">
+  <div class="wrap">
+    <p class="sec-k rv"><em>05</em> Planes</p>
+    <h2 class="say" data-say style="max-width:22ch;font-size:clamp(1.75rem,5.4vw,4rem)">Tres puntos de partida.</h2>
+    <div class="sw-wrap rv d1" style="margin-top:clamp(30px,5vh,54px)">
+      <div class="sw" role="group" aria-label="Periodo de facturación">
+        <span class="sw-ind" aria-hidden="true"></span>
+        <button class="sw-b" type="button" data-per="m" aria-pressed="true">Mensual</button>
+        <button class="sw-b" type="button" data-per="y" aria-pressed="false">Anual <span class="sw-tag">−15%</span></button>
+      </div>
+    </div>
+
+    <div class="pl">
+
+      <div class="pl-c">
+        <p class="pl-t">Básico</p>
+        <p class="pl-n">Responde</p>
+        <div class="pl-p"><b data-m="495000" data-y="5049000">$495.000</b><span class="pl-per">COP / mes</span></div>
+        <p class="pl-eq" hidden>Equivale a $420.750 al mes</p>
+        <p class="pl-imp">Implementación única <b>$850.000</b></p>
+        <ul class="pl-l">
+          <li><span>Mensajes / mes</span><b>30.000</b></li>
+          <li><span>Conversaciones aprox.</span><b>2.500</b></li>
+          <li><span>Excedente por mensaje</span><b>$12</b></li>
+          <li><span>Tablets incluidas</span><b>1</b></li>
+        </ul>
+        <a class="btn btn-o" data-wa href="https://wa.me/573142162323?text=Hola%2C%20Meridian.%20Quiero%20conocer%20c%C3%B3mo%20pueden%20ayudarme%20a%20automatizar%20y%20transformar%20los%20procesos%20de%20mi%20empresa.%20Me%20gustar%C3%ADa%20recibir%20m%C3%A1s%20informaci%C3%B3n%20y%20agendar%20una%20conversaci%C3%B3n." target="_blank" rel="noopener noreferrer">Hablar de este plan</a>
+      </div>
+
+      <div class="pl-c hi">
+        <p class="pl-t">Pro</p>
+        <p class="pl-n">Controla</p>
+        <div class="pl-p"><b data-m="995000" data-y="10149000">$995.000</b><span class="pl-per">COP / mes</span></div>
+        <p class="pl-eq" hidden>Equivale a $845.750 al mes</p>
+        <p class="pl-imp">Implementación única <b>$1.100.000</b></p>
+        <ul class="pl-l">
+          <li><span>Mensajes / mes</span><b>60.000</b></li>
+          <li><span>Conversaciones aprox.</span><b>5.000</b></li>
+          <li><span>Excedente por mensaje</span><b>$10</b></li>
+          <li><span>Tablets incluidas</span><b>1</b></li>
+        </ul>
+        <a class="btn" data-wa href="https://wa.me/573142162323?text=Hola%2C%20Meridian.%20Quiero%20conocer%20c%C3%B3mo%20pueden%20ayudarme%20a%20automatizar%20y%20transformar%20los%20procesos%20de%20mi%20empresa.%20Me%20gustar%C3%ADa%20recibir%20m%C3%A1s%20informaci%C3%B3n%20y%20agendar%20una%20conversaci%C3%B3n." target="_blank" rel="noopener noreferrer">Hablar de este plan</a>
+      </div>
+
+      <div class="pl-c">
+        <p class="pl-t">Premium</p>
+        <p class="pl-n">Crece</p>
+        <div class="pl-p"><b data-m="1995000" data-y="20349000">$1.995.000</b><span class="pl-per">COP / mes</span></div>
+        <p class="pl-eq" hidden>Equivale a $1.695.750 al mes</p>
+        <p class="pl-imp">Implementación única <b>$1.800.000</b></p>
+        <ul class="pl-l">
+          <li><span>Mensajes / mes</span><b>120.000</b></li>
+          <li><span>Conversaciones aprox.</span><b>10.000</b></li>
+          <li><span>Excedente por mensaje</span><b>$8</b></li>
+          <li><span>Tablets incluidas</span><b>2</b></li>
+        </ul>
+        <a class="btn btn-o" data-wa href="https://wa.me/573142162323?text=Hola%2C%20Meridian.%20Quiero%20conocer%20c%C3%B3mo%20pueden%20ayudarme%20a%20automatizar%20y%20transformar%20los%20procesos%20de%20mi%20empresa.%20Me%20gustar%C3%ADa%20recibir%20m%C3%A1s%20informaci%C3%B3n%20y%20agendar%20una%20conversaci%C3%B3n." target="_blank" rel="noopener noreferrer">Hablar de este plan</a>
+      </div>
+
+    </div>
+    <p class="pl-note rv d2">Valores en pesos colombianos. Una conversación equivale a unos 12 mensajes. Cada proyecto se ajusta al alcance real: los planes son el punto de partida, no el techo.</p>
+  </div>
+</section>
+
+<!-- ═══ POR QUÉ NOSOTROS ═══ -->
+<section class="sec" id="valor">
+  <div class="wrap">
+    <p class="sec-k rv"><em>06</em> Por qué nosotros</p>
+    <h2 class="say" data-say style="max-width:22ch;font-size:clamp(1.75rem,5.4vw,4rem)">Qué cambia cuando trabajas con nosotros.</h2>
+
+    <div class="vl" style="margin-top:clamp(30px,5vh,54px)">
+
+      <div class="vl-r">
+        <span class="vl-n">01</span>
+        <div>
+          <h3 class="vl-t"><span><i>Primero entendemos, después proponemos</i></span></h3>
+          <p class="vl-d">Empezamos mirando cómo entra el trabajo a tu operación, quién lo toca y dónde se detiene. La propuesta sale de ahí, no de un catálogo de servicios.</p>
+        </div>
+        <span class="vl-line"></span>
+      </div>
+
+      <div class="vl-r">
+        <span class="vl-n">02</span>
+        <div>
+          <h3 class="vl-t"><span><i>Un sistema tuyo, no una plantilla</i></span></h3>
+          <p class="vl-d">Se construye alrededor de tus reglas y de tus casos raros, que son justamente los que rompen cualquier herramienta genérica. No dependes de una plataforma que no controlas.</p>
+        </div>
+        <span class="vl-line"></span>
+      </div>
+
+      <div class="vl-r">
+        <span class="vl-n">03</span>
+        <div>
+          <h3 class="vl-t"><span><i>Se conecta con lo que ya tienes</i></span></h3>
+          <p class="vl-d">WhatsApp, redes, CRM, hojas de cálculo, ERP. Tu equipo no cambia de herramientas para que el software encaje: el software se acomoda a cómo ya trabajan.</p>
+        </div>
+        <span class="vl-line"></span>
+      </div>
+
+      <div class="vl-r">
+        <span class="vl-n">04</span>
+        <div>
+          <h3 class="vl-t"><span><i>Trabaja cuando nadie está</i></span></h3>
+          <p class="vl-d">Un mensaje a las once de la noche recibe la misma atención que uno del mediodía. El proceso no tiene horario y no deja a un cliente esperando hasta mañana.</p>
+        </div>
+        <span class="vl-line"></span>
+      </div>
+
+      <div class="vl-r">
+        <span class="vl-n">05</span>
+        <div>
+          <h3 class="vl-t"><span><i>Nada depende de la memoria de una persona</i></span></h3>
+          <p class="vl-d">Cada conversación, cada pedido y cada decisión queda registrada y se puede consultar. Si esa persona falta o se va, la operación sigue funcionando igual.</p>
+        </div>
+        <span class="vl-line"></span>
+      </div>
+
+      <div class="vl-r">
+        <span class="vl-n">06</span>
+        <div>
+          <h3 class="vl-t"><span><i>Más volumen no significa más nómina</i></span></h3>
+          <p class="vl-d">Atender el doble de solicitudes no exige contratar al doble de gente. El sistema absorbe el crecimiento y tu equipo se dedica a lo que sí necesita criterio humano.</p>
+        </div>
+        <span class="vl-line"></span>
+      </div>
+
+      <div class="vl-r">
+        <span class="vl-n">07</span>
+        <div>
+          <h3 class="vl-t"><span><i>Sabe cuándo llamar a una persona</i></span></h3>
+          <p class="vl-d">Cuando el sistema no está seguro, no improvisa: pasa la conversación a tu equipo con todo el contexto ya armado. La automatización acompaña, no reemplaza el criterio.</p>
+        </div>
+        <span class="vl-line"></span>
+      </div>
+
+    </div>
+
+    <p class="vl-foot rv">Y no desaparecemos al entregar: medimos cómo se comporta en la práctica, ajustamos las reglas y <b>ampliamos el alcance con datos reales de uso.</b></p>
+  </div>
+</section>
+
+<!-- ═══ CIERRE ═══ -->
+<section class="cl" id="cierre">
+  <div class="wrap">
+    <h2 class="say" data-say>Cuéntanos qué te está quitando el tiempo.</h2>
+    <p class="rv d1">Escríbenos por WhatsApp y conversamos sobre tu operación. Si hay algo que se puede automatizar, te lo decimos con claridad. Si no, también.</p>
+    <a class="btn btn-xl rv d2" data-wa href="https://wa.me/573142162323?text=Hola%2C%20Meridian.%20Quiero%20conocer%20c%C3%B3mo%20pueden%20ayudarme%20a%20automatizar%20y%20transformar%20los%20procesos%20de%20mi%20empresa.%20Me%20gustar%C3%ADa%20recibir%20m%C3%A1s%20informaci%C3%B3n%20y%20agendar%20una%20conversaci%C3%B3n." target="_blank" rel="noopener noreferrer">
+      <svg width="19" height="19" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.45 1.32 4.95L2 22l5.25-1.38c1.45.79 3.08 1.21 4.79 1.21 5.46 0 9.91-4.45 9.91-9.91C21.95 6.45 17.5 2 12.04 2zm5.8 14.02c-.24.68-1.42 1.31-1.96 1.36-.54.05-1.04.24-3.51-.73-2.98-1.17-4.87-4.24-5.02-4.44-.15-.2-1.2-1.6-1.2-3.05s.76-2.16 1.03-2.46c.27-.29.59-.37.78-.37s.39 0 .56.01c.19.01.44-.07.68.52.24.59.83 2.03.9 2.18.07.15.12.32.02.51-.1.2-.15.32-.29.5-.15.17-.31.39-.44.52-.15.15-.3.31-.13.6.17.29.76 1.25 1.63 2.03 1.12 1 2.06 1.31 2.35 1.46.29.15.46.12.63-.07.17-.2.73-.85.93-1.14.2-.29.39-.24.66-.15.27.1 1.71.81 2 .96.29.15.49.22.56.34.07.13.07.75-.17 1.43z"/></svg>
+      Escríbenos por WhatsApp
+    </a>
+  </div>
+</section>
+
+<div class="wrap">
+  <footer class="foot">
+    <span>MeridianTech · Colombia</span>
+    <span class="foot-soc">
+      <a href="https://www.instagram.com/meridiantech.co/?hl=es" target="_blank" rel="noopener noreferrer">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+          <rect x="3" y="3" width="18" height="18" rx="5.4"/>
+          <circle cx="12" cy="12" r="4"/>
+          <circle cx="17.3" cy="6.7" r="1.1" fill="currentColor" stroke="none"/>
+        </svg>Instagram
+      </a>
+      <a href="https://www.facebook.com/profile.php?id=61592046685665" target="_blank" rel="noopener noreferrer">
+        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+          <path d="M22 12.06C22 6.5 17.52 2 12 2S2 6.5 2 12.06c0 5.02 3.66 9.18 8.44 9.94v-7.03H7.9v-2.91h2.54V9.85c0-2.52 1.49-3.91 3.77-3.91 1.09 0 2.23.2 2.23.2v2.46h-1.26c-1.24 0-1.63.78-1.63 1.57v1.89h2.78l-.44 2.91h-2.34V22c4.78-.76 8.44-4.92 8.44-9.94z"/>
+        </svg>Facebook
+      </a>
+    </span>
+    <span>Inteligencia artificial · Software · Automatización</span>
+  </footer>
+</div>
+
+</main>
+
+<script>
+(function(){
+'use strict';
+var reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+var small  = innerWidth < 700;
+
+/* ══════════ ÓRBITA: anillo de esferas tras el monograma ══════════
+   Prolonga en movimiento el arco que ya está dibujado en el logo.
+   Un pulso recorre el anillo: el proceso corriendo, no un adorno. */
+(function orbit(){
+  var cv = document.getElementById('knot'); if(!cv) return;
+  var ctx = cv.getContext('2d');
+  var NT = small ? 130 : 208, NU = small ? 8 : 11;
+  var TUBE = 0.13, RAD = 2.68, D = 4.2;
+  var pts = [], W=0,H=0,S=0,cx=0,cy=0,dpr=1;
+
+  function C(t){ return [RAD*Math.cos(t), RAD*Math.sin(t), 0]; }
+  function nrm(v){var l=Math.hypot(v[0],v[1],v[2])||1;return [v[0]/l,v[1]/l,v[2]/l];}
+  function crs(a,b){return [a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]];}
+
+  for(var i=0;i<NT;i++){
+    var t = i/NT*Math.PI*2, h=0.008;
+    var c = C(t), c1 = C(t+h), c0 = C(t-h);
+    var T = nrm([c1[0]-c0[0], c1[1]-c0[1], c1[2]-c0[2]]);
+    var N = nrm(crs(T,[0,0,1])); if(!isFinite(N[0])) N = nrm(crs(T,[0,1,0]));
+    var B = crs(T,N);
+    for(var j=0;j<NU;j++){
+      var u = j/NU*Math.PI*2, cu=Math.cos(u), su=Math.sin(u);
+      var n = [cu*N[0]+su*B[0], cu*N[1]+su*B[1], cu*N[2]+su*B[2]];
+      pts.push({
+        p:[(c[0]+TUBE*n[0])/3.1,(c[1]+TUBE*n[1])/3.1,(c[2]+TUBE*n[2])/3.1],
+        n:n, t:t, z:0, sx:0, sy:0, r:0, b:0
+      });
+    }
+  }
+
+  function size(){
+    var r = cv.parentNode.getBoundingClientRect();
+    dpr = Math.min(devicePixelRatio||1, small?1.5:2);
+    W = Math.max(60, r.width); H = Math.max(60, r.height);
+    cv.width = W*dpr; cv.height = H*dpr;
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+    S = Math.min(W,H)*0.47; cx = W/2; cy = H/2;
+  }
+  size();
+  if(window.ResizeObserver) new ResizeObserver(size).observe(cv.parentNode);
+  else addEventListener('resize', size);
+
+  var L = nrm([-0.42, 0.58, 0.72]);
+  var ay = 0.6, ax = -1.06, ty = 0, tx = 0, mvx = 0, mvy = 0, trav = 0;
+
+  addEventListener('pointermove', function(e){
+    mvx = (e.clientX/innerWidth  - .5);
+    mvy = (e.clientY/innerHeight - .5);
+  }, {passive:true});
+
+  var last = 0;
+  function draw(ts){
+    var dt = last ? Math.min(48, ts-last) : 16; last = ts;
+    if(!reduce){ ay += dt*0.00015; trav += dt*0.00115; }
+    ty += ((mvx*0.42) - ty)*0.05;
+    tx += ((mvy*0.30) - tx)*0.05;
+
+    var sy=Math.sin(ay+ty), cyr=Math.cos(ay+ty);
+    var sx=Math.sin(ax+tx), cxr=Math.cos(ax+tx);
+
+    ctx.clearRect(0,0,W,H);
+    var k,q,p,n,x,y,z,nx,ny,nz,f,lam;
+    for(k=0;k<pts.length;k++){
+      q=pts[k]; p=q.p; n=q.n;
+      x = p[0]*cyr + p[2]*sy;  z = -p[0]*sy + p[2]*cyr;  y = p[1];
+      var y2 = y*cxr - z*sx;   var z2 = y*sx + z*cxr;
+      nx = n[0]*cyr + n[2]*sy; nz = -n[0]*sy + n[2]*cyr; ny = n[1];
+      var ny2 = ny*cxr - nz*sx; var nz2 = ny*sx + nz*cxr;
+      f = D/(D - z2);
+      q.sx = cx + x*S*f; q.sy = cy - y2*S*f; q.z = z2;
+      lam = nx*L[0] + ny2*L[1] + nz2*L[2]; if(lam<0) lam=0;
+      var dd = (q.t - trav) % 6.28318; if(dd<0) dd += 6.28318;
+      if(dd > 3.14159) dd = 6.28318 - dd;
+      var pulse = Math.exp(-(dd*dd)/0.16);
+      q.b = Math.min(1, Math.pow(lam,1.35)*0.5 + pulse*0.95);
+      q.r = (small?0.85:1.05) * f * (S/95) * (1 + pulse*1.05);
+    }
+    pts.sort(function(a,b){return a.z-b.z;});
+    for(k=0;k<pts.length;k++){
+      q=pts[k];
+      var b=q.b, r, g, bl;
+      if(b<0.45){ var m=b/0.45; r=14+(43-14)*m; g=18+(75-18)*m; bl=44+(255-44)*m; }
+      else { var m2=(b-0.45)/0.55; r=43+(255-43)*m2; g=75+(255-75)*m2; bl=255; }
+      var al = (0.24 + 0.62*Math.max(0,(q.z+0.55)));
+      ctx.beginPath(); ctx.arc(q.sx,q.sy,Math.max(0.5,q.r),0,6.2832);
+      ctx.fillStyle='rgba('+(r|0)+','+(g|0)+','+(bl|0)+','+Math.min(1,al).toFixed(3)+')';
+      ctx.fill();
+    }
+    requestAnimationFrame(draw);
+  }
+  requestAnimationFrame(draw);
+})();
+
+/* ══════════ INTRO ══════════
+   Contador 0→100, el velo negro se disuelve y el logotipo del hero
+   se dibuja en su sitio. Se puede saltar con el botón, Esc o espacio. */
+(function intro(){
+  var veil=document.getElementById('veil'), cnt=document.getElementById('count'),
+      skip=document.getElementById('skip'), wm=document.getElementById('wm'),
+      hb=document.getElementById('herob'), nav=document.getElementById('nav');
+  if(!veil||!wm) return;
+
+  var letters=[].slice.call(wm.querySelectorAll('.wm-name i'));
+  letters.forEach(function(el,i){ el.style.transitionDelay=(0.26+i*0.052)+'s'; });
+
+  function finish(){
+    if(document.body.dataset.done) return;
+    document.body.dataset.done='1';
+    veil.classList.add('gone'); cnt.classList.add('gone'); skip.classList.add('gone');
+    wm.classList.add('in'); hb.classList.add('in'); nav.classList.add('in');
+    setTimeout(function(){ document.body.classList.remove('lock'); }, 500);
+    setTimeout(function(){ document.body.classList.add('settled'); }, 2400);
+  }
+
+  if(reduce){ cnt.style.display='none'; skip.style.display='none'; finish(); return; }
+
+  var t0=null, DUR=1250;
+  function tick(ts){
+    if(t0===null) t0=ts;
+    var p=Math.min(1,(ts-t0)/DUR);
+    cnt.textContent=Math.round(p*100);
+    if(p<1) requestAnimationFrame(tick);
+    else setTimeout(finish, 140);
+  }
+  requestAnimationFrame(tick);
+
+  skip.addEventListener('click', finish);
+  addEventListener('keydown', function(e){
+    if(e.key==='Escape'||e.key===' '||e.key==='Enter') finish();
+  });
+  // si algo se cuelga a medias, la página se libera igual
+  setTimeout(finish, 6000);
+})();
+
+/* ══════════ REVELADOS ══════════ */
+(function reveals(){
+  // partir declaraciones en palabras
+  [].slice.call(document.querySelectorAll('[data-say]')).forEach(function(el){
+    var frag=document.createDocumentFragment();
+    [].slice.call(el.childNodes).forEach(function(node){
+      var isQ = node.nodeType===1 && node.classList && node.classList.contains('q');
+      var text = node.textContent;
+      text.split(/(\s+)/).forEach(function(tk){
+        if(!tk) return;
+        if(/^\s+$/.test(tk)){ frag.appendChild(document.createTextNode(' ')); return; }
+        var w=document.createElement('span'); w.className='w'+(isQ?' q':'');
+        var it=document.createElement('i'); it.textContent=tk;
+        w.appendChild(it); frag.appendChild(w);
+      });
+    });
+    el.innerHTML=''; el.appendChild(frag);
+    [].slice.call(el.querySelectorAll('.w i')).forEach(function(it,i){
+      it.style.transitionDelay=(i*0.045)+'s';
+    });
+  });
+
+  var targets=[].slice.call(document.querySelectorAll('.rv, [data-say], .vl-r, .pl-c'));
+  if(!('IntersectionObserver' in window) || reduce){
+    targets.forEach(function(t){ t.classList.add('in'); });
+    return;
+  }
+  var io=new IntersectionObserver(function(es){
+    es.forEach(function(e){ if(e.isIntersecting){ e.target.classList.add('in'); io.unobserve(e.target); } });
+  },{rootMargin:'0px 0px -12% 0px',threshold:0.12});
+  targets.forEach(function(t){ io.observe(t); });
+})();
+
+/* ══════════ DEMO ══════════ */
+(function demo(){
+  var CASES={
+    reserva:{canal:'WhatsApp',hora:'19:42',
+      msg:'Buenas tardes, tienen disponibilidad para 6 personas el sábado a las 8?',
+      steps:[
+        {n:'Clasificar intención',v:'intent = <b>reserva</b> · confianza <b>0.94</b> · 180 ms'},
+        {n:'Extraer campos',v:'personas <b>6</b> · fecha <b>sábado</b> · hora <b>20:00</b>'},
+        {n:'Consultar disponibilidad',v:'mesas.libres(20:00) → <b>2 disponibles</b>'},
+        {n:'Responder y confirmar',v:'mensaje enviado con dos opciones de hora'},
+        {n:'Registrar',v:'fila escrita en <b>reservas</b> · recordatorio programado'}]},
+    pedido:{canal:'WhatsApp',hora:'12:08',
+      msg:'Hola, quiero 2 combos familiares y una gaseosa de 1.5, para la calle 45 # 12-30',
+      steps:[
+        {n:'Clasificar intención',v:'intent = <b>pedido</b> · confianza <b>0.91</b> · 165 ms'},
+        {n:'Extraer campos',v:'items <b>3</b> · combo_familiar <b>×2</b> · gaseosa_1.5L <b>×1</b>'},
+        {n:'Verificar inventario',v:'stock.disponible → <b>ok</b> · estimado <b>35 min</b>'},
+        {n:'Calcular y confirmar',v:'total calculado · dirección validada · confirmación enviada'},
+        {n:'Registrar',v:'orden creada en <b>pedidos</b> · notificación a cocina'}]},
+    cotizacion:{canal:'Instagram',hora:'09:21',
+      msg:'Buenos días, necesito precio para 300 unidades con logo impreso, entrega en Medellín',
+      steps:[
+        {n:'Clasificar intención',v:'intent = <b>cotizacion</b> · confianza <b>0.88</b> · 210 ms'},
+        {n:'Extraer campos',v:'cantidad <b>300</b> · personalización <b>logo</b> · ciudad <b>Medellín</b>'},
+        {n:'Aplicar reglas',v:'escala(300) → <b>rango mayorista</b> · flete <b>Medellín</b>'},
+        {n:'Enviar borrador',v:'cotización preliminar enviada · pendiente de aprobación'},
+        {n:'Escalar a comercial',v:'registro en <b>cotizaciones</b> · tarea asignada'}]}
+  };
+  var ds=document.getElementById('ds'), dm=document.getElementById('dm'),
+      dc=document.getElementById('dc'), dh=document.getElementById('dh'),
+      chips=[].slice.call(document.querySelectorAll('.chip')), tm=[];
+
+  function render(key){
+    var c=CASES[key]; if(!c||!ds) return;
+    tm.forEach(clearTimeout); tm=[];
+    dc.textContent=c.canal; dh.textContent=c.hora; dm.textContent=c.msg;
+    ds.innerHTML=c.steps.map(function(s){
+      return '<div class="st"><div class="st-n">'+s.n+'</div><div class="st-v">'+s.v+'</div></div>';
+    }).join('');
+    var ns=[].slice.call(ds.querySelectorAll('.st'));
+    if(reduce){ ns.forEach(function(n){n.classList.add('on','dn');}); return; }
+    ns.forEach(function(node,i){
+      tm.push(setTimeout(function(){
+        node.classList.add('on');
+        if(i>0) ns[i-1].classList.add('dn');
+        if(i===ns.length-1) tm.push(setTimeout(function(){node.classList.add('dn');},640));
+      }, 300+i*640));
+    });
+  }
+  chips.forEach(function(ch){
+    ch.addEventListener('click',function(){
+      chips.forEach(function(c){c.setAttribute('aria-selected','false');});
+      ch.setAttribute('aria-selected','true'); render(ch.dataset.case);
+    });
+  });
+  var rr=document.getElementById('rerun');
+  if(rr) rr.addEventListener('click',function(){
+    var a=document.querySelector('.chip[aria-selected="true"]');
+    render(a?a.dataset.case:'reserva');
+  });
+
+  var sec=document.getElementById('demo'), started=false;
+  if(sec && 'IntersectionObserver' in window && !reduce){
+    var io=new IntersectionObserver(function(es){
+      es.forEach(function(e){ if(e.isIntersecting && !started){ started=true; render('reserva'); io.disconnect(); } });
+    },{threshold:0.2});
+    io.observe(sec);
+  } else render('reserva');
+})();
+
+/* ══════════ MENÚ ══════════
+   Panel pequeño anclado a la barra. Del componente MenuVertical se
+   conserva el efecto: la flecha entra desde la izquierda y empuja la
+   etiqueta. Sin next/link, sin motion, sin lucide-react.
+   No bloquea el scroll ni cubre la página. */
+(function menu(){
+  var btn=document.getElementById('menuBtn'), mn=document.getElementById('menu');
+  if(!btn||!mn) return;
+  var items=[].slice.call(mn.querySelectorAll('.mn-i'));
+  var open=false;
+
+  items.forEach(function(el,i){ el.style.transitionDelay=(i*0.03)+'s'; });
+
+  function setOpen(v){
+    open=v;
+    mn.classList.toggle('open',v);
+    mn.setAttribute('aria-hidden', v?'false':'true');
+    btn.setAttribute('aria-expanded', v?'true':'false');
+  }
+
+  btn.addEventListener('click', function(e){ e.stopPropagation(); setOpen(!open); });
+
+  // un enlace cierra el panel y deja que el ancla haga su trabajo
+  [].slice.call(mn.querySelectorAll('a')).forEach(function(a){
+    a.addEventListener('click', function(){ setOpen(false); });
+  });
+
+  // clic fuera y Esc cierran
+  document.addEventListener('click', function(e){
+    if(open && !mn.contains(e.target) && e.target!==btn) setOpen(false);
+  });
+  addEventListener('keydown', function(e){
+    if(e.key==='Escape' && open){ setOpen(false); btn.focus(); }
+  });
+})();
+
+/* ══════════ PLANES: conmutador y precios animados ══════════
+   La idea de NumberFlow y del switch con pastilla deslizante, sin
+   Framer Motion ni @number-flow/react. Los precios reales están
+   escritos en el HTML: si el script falla, se leen igual. */
+(function pricing(){
+  var fmt=new Intl.NumberFormat('es-CO');
+  var prices=[].slice.call(document.querySelectorAll('.pl-p b[data-m]'));
+  if(!prices.length) return;
+  var pers=[].slice.call(document.querySelectorAll('.pl-per'));
+  var eqs=[].slice.call(document.querySelectorAll('.pl-eq'));
+  var sw=document.querySelector('.sw');
+  var btns=sw?[].slice.call(sw.querySelectorAll('.sw-b')):[];
+  var ind=sw?sw.querySelector('.sw-ind'):null;
+  var per='m';
+
+  function money(n){ return '$'+fmt.format(Math.round(n)); }
+
+  function animate(el,from,to,dur){
+    if(reduce){ el.textContent=money(to); return; }
+    var t0=null;
+    function step(ts){
+      if(t0===null) t0=ts;
+      var p=Math.min(1,(ts-t0)/dur);
+      var e=1-Math.pow(1-p,3);
+      el.textContent=money(from+(to-from)*e);
+      if(p<1) requestAnimationFrame(step);
+      else el.textContent=money(to);
+    }
+    requestAnimationFrame(step);
+  }
+
+  function moveInd(){
+    if(!ind||!sw) return;
+    var act=sw.querySelector('.sw-b[aria-pressed="true"]');
+    if(!act) return;
+    ind.style.width=act.offsetWidth+'px';
+    ind.style.transform='translateX('+(act.offsetLeft-4)+'px)';
+  }
+
+  function setPeriod(p){
+    if(p===per) return;
+    per=p;
+    btns.forEach(function(b){
+      b.setAttribute('aria-pressed', b.dataset.per===p ? 'true' : 'false');
+    });
+    moveInd();
+    prices.forEach(function(el){
+      var from=parseInt(String(el.textContent).replace(/\D/g,''),10)||0;
+      var to=parseInt(p==='y'?el.dataset.y:el.dataset.m,10);
+      animate(el,from,to,720);
+    });
+    pers.forEach(function(el){ el.textContent = p==='y' ? 'COP / año' : 'COP / mes'; });
+    eqs.forEach(function(el){ el.hidden = (p!=='y'); });
+  }
+
+  btns.forEach(function(b){
+    b.addEventListener('click', function(){ setPeriod(b.dataset.per); });
+  });
+  addEventListener('resize', moveInd, {passive:true});
+  // la pastilla necesita medidas reales: espera a que carguen las tipografías
+  if(document.fonts && document.fonts.ready) document.fonts.ready.then(moveInd);
+  else setTimeout(moveInd,400);
+  moveInd();
+
+  // conteo de entrada, una sola vez
+  if(!reduce && 'IntersectionObserver' in window){
+    var io=new IntersectionObserver(function(es){
+      es.forEach(function(e){
+        if(!e.isIntersecting) return;
+        var el=e.target, to=parseInt(per==='y'?el.dataset.y:el.dataset.m,10);
+        el.textContent=money(0);
+        animate(el,0,to,1100);
+        io.unobserve(el);
+      });
+    },{threshold:.4});
+    prices.forEach(function(el){ io.observe(el); });
+  }
+})();
+
+/* ══════════ FILA ACTIVA EN «POR QUÉ NOSOTROS» ══════════
+   La fila más cercana al centro de la pantalla se enciende: el número
+   pasa a azul, el título a blanco y el filete recibe el degradado.
+   Refuerza la sensación de que la lista avanza con el scroll. */
+(function active(){
+  var rows=[].slice.call(document.querySelectorAll('.vl-r'));
+  if(!rows.length || reduce) return;
+  var raf=null, cur=null;
+  function paint(){
+    var mid=innerHeight*0.46, best=null, dist=Infinity;
+    for(var i=0;i<rows.length;i++){
+      var r=rows[i].getBoundingClientRect();
+      if(r.bottom<0 || r.top>innerHeight) continue;
+      var d=Math.abs(r.top + r.height/2 - mid);
+      if(d<dist){ dist=d; best=rows[i]; }
+    }
+    if(best!==cur){
+      if(cur) cur.classList.remove('act');
+      if(best) best.classList.add('act');
+      cur=best;
+    }
+    raf=null;
+  }
+  function tick(){ if(!raf) raf=requestAnimationFrame(paint); }
+  addEventListener('scroll',tick,{passive:true});
+  addEventListener('resize',tick,{passive:true});
+  paint();
+})();
+
+/* ══════════ PARALAJE POR CAPAS DEL HERO ══════════
+   Misma técnica que el componente de Osmo — cuatro capas
+   desplazándose a 70 / 55 / 40 / 10 por ciento a lo largo del alto
+   del hero — resuelta con un solo requestAnimationFrame y variables
+   CSS. Sin GSAP, sin ScrollTrigger y sin Lenis: cero dependencias. */
+(function layers(){
+  if(reduce) return;
+  var hero=document.querySelector('.hero'); if(!hero) return;
+  var L=[
+    // ojo: hay dos copias del logotipo en el DOM (intro y hero).
+    // Estas consultas van acotadas al hero, no al documento.
+    {el:hero.querySelector('.wm-glow'),  pct:26},
+    {el:hero.querySelector('.wm-orbit'), pct:18},
+    {el:hero.querySelector('.wm-badge'), pct:60},
+    {el:hero.querySelector('.wm-txt'),   pct:34},
+    {el:document.getElementById('herob'), pct:10}
+  ].filter(function(o){ return o.el; });
+  if(!L.length) return;
+
+  var raf=null;
+  function paint(){
+    var h=hero.offsetHeight||1;
+    var p=-hero.getBoundingClientRect().top/h;
+    p=Math.min(1,Math.max(0,p));
+    for(var i=0;i<L.length;i++){
+      L[i].el.style.setProperty('--pl',(p*L[i].pct).toFixed(2)+'%');
+    }
+    raf=null;
+  }
+  function tick(){ if(!raf) raf=requestAnimationFrame(paint); }
+  addEventListener('scroll',tick,{passive:true});
+  addEventListener('resize',tick,{passive:true});
+  paint();
+})();
+
+/* ══════════ GRADIENTE WEBGL2 — fondo de toda la página ══════════
+   Port a JS plano del componente AnimatedGradient (preset Prism),
+   con los colores de MeridianTech. Cambios sobre el original:
+   · comprueba compilación y enlace del shader
+   · si no hay WebGL2, el fondo queda negro sin hueco vacío
+   · respeta prefers-reduced-motion (dibuja un solo fotograma)
+   · se detiene al cambiar de pestaña
+   · pixel ratio limitado a 1.25 porque ahora cubre el viewport entero
+   ────────────────────────────────────────────────────────────── */
+(function gradient(){
+  var cv = document.getElementById('grad');
+  if(!cv) return;
+
+  var P = { color1:'#000000', color2:'#2B4BFF', color3:'#E8ECF4',
+            rotation:-50, proportion:1, scale:0.01, speed:18, distortion:0,
+            swirl:50, swirlIterations:16, softness:47, offset:-299, shapeSize:45 };
+
+  function rgb(h){
+    var c=h.replace('#','');
+    return [parseInt(c.slice(0,2),16)/255, parseInt(c.slice(2,4),16)/255, parseInt(c.slice(4,6),16)/255, 1];
+  }
+
+  var gl = cv.getContext('webgl2',{premultipliedAlpha:true,alpha:true,antialias:true});
+  if(!gl) return; // la sección ya es negra: no queda hueco
+
+  var VS='#version 300 es\nin vec4 a_position;\nvoid main(){gl_Position=a_position;}';
+  var FS='#version 300 es\n'+
+  'precision highp float;\n'+
+  'uniform float u_time;uniform float u_pixelRatio;uniform vec2 u_resolution;\n'+
+  'uniform float u_scale;uniform float u_rotation;\n'+
+  'uniform vec4 u_color1;uniform vec4 u_color2;uniform vec4 u_color3;\n'+
+  'uniform float u_proportion;uniform float u_softness;uniform float u_shape;\n'+
+  'uniform float u_shapeScale;uniform float u_distortion;uniform float u_swirl;\n'+
+  'uniform float u_swirlIterations;\n'+
+  'out vec4 fragColor;\n'+
+  '#define TWO_PI 6.28318530718\n#define PI 3.14159265358979323846\n'+
+  'vec2 rotate(vec2 uv,float th){return mat2(cos(th),sin(th),-sin(th),cos(th))*uv;}\n'+
+  'float random(vec2 st){return fract(sin(dot(st.xy,vec2(12.9898,78.233)))*43758.5453123);}\n'+
+  'float noise(vec2 st){vec2 i=floor(st);vec2 f=fract(st);float a=random(i);float b=random(i+vec2(1.,0.));'+
+  'float c=random(i+vec2(0.,1.));float d=random(i+vec2(1.,1.));vec2 u=f*f*(3.-2.*f);'+
+  'return mix(mix(a,b,u.x),mix(c,d,u.x),u.y);}\n'+
+  'vec4 blend_colors(vec4 c1,vec4 c2,vec4 c3,float mixer,float ew,float eb){\n'+
+  ' vec3 k1=c1.rgb*c1.a,k2=c2.rgb*c2.a,k3=c3.rgb*c3.a;\n'+
+  ' float r1=smoothstep(.0+.35*ew,.7-.35*ew+.5*eb,mixer);\n'+
+  ' float r2=smoothstep(.3+.35*ew,1.-.35*ew+eb,mixer);\n'+
+  ' vec3 b2=mix(k1,k2,r1);float o2=mix(c1.a,c2.a,r1);\n'+
+  ' return vec4(mix(b2,k3,r2),mix(o2,c3.a,r2));}\n'+
+  'void main(){\n'+
+  ' vec2 uv=gl_FragCoord.xy/u_resolution.xy;float t=.5*u_time;\n'+
+  ' float ns=.0005+.006*u_scale;\n'+
+  ' uv-=.5;uv*=(ns*u_resolution);uv=rotate(uv,u_rotation*.5*PI);uv/=u_pixelRatio;uv+=.5;\n'+
+  ' float n1=noise(uv*1.+t),n2=noise(uv*2.-t);float ang=n1*TWO_PI;\n'+
+  ' uv.x+=4.*u_distortion*n2*cos(ang);uv.y+=4.*u_distortion*n2*sin(ang);\n'+
+  ' float it=ceil(clamp(u_swirlIterations,1.,30.));\n'+
+  ' for(float i=1.;i<=it;i++){uv.x+=clamp(u_swirl,0.,2.)/i*cos(t+i*1.5*uv.y);uv.y+=clamp(u_swirl,0.,2.)/i*cos(t+i*1.*uv.x);}\n'+
+  ' float pr=clamp(u_proportion,0.,1.);float shape=0.,mixer=0.;\n'+
+  ' vec2 su=uv*(.5+3.5*u_shapeScale);\n'+
+  ' shape=.5+.5*sin(su.x)*cos(su.y);\n'+
+  ' mixer=shape+.48*sign(pr-.5)*pow(abs(pr-.5),.5);\n'+
+  ' vec4 cm=blend_colors(u_color1,u_color2,u_color3,mixer,1.-clamp(u_softness,0.,1.),.01+.01*u_scale);\n'+
+  ' fragColor=vec4(cm.rgb,cm.a);}';
+
+  function mk(type,src){
+    var s=gl.createShader(type); gl.shaderSource(s,src); gl.compileShader(s);
+    if(!gl.getShaderParameter(s,gl.COMPILE_STATUS)){
+      console.warn('[MeridianTech] shader:',gl.getShaderInfoLog(s)); return null;
+    }
+    return s;
+  }
+  var vs=mk(gl.VERTEX_SHADER,VS), fs=mk(gl.FRAGMENT_SHADER,FS);
+  if(!vs||!fs) return;
+
+  var pg=gl.createProgram();
+  gl.attachShader(pg,vs); gl.attachShader(pg,fs); gl.linkProgram(pg);
+  if(!gl.getProgramParameter(pg,gl.LINK_STATUS)){
+    console.warn('[MeridianTech] link:',gl.getProgramInfoLog(pg)); return;
+  }
+  gl.useProgram(pg);
+
+  var buf=gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER,buf);
+  gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,1,-1,-1,1,-1,1,1,-1,1,1]),gl.STATIC_DRAW);
+  var loc=gl.getAttribLocation(pg,'a_position');
+  gl.enableVertexAttribArray(loc);
+  gl.vertexAttribPointer(loc,2,gl.FLOAT,false,0,0);
+
+  var U={};
+  ['u_time','u_resolution','u_pixelRatio','u_scale','u_rotation','u_color1','u_color2',
+   'u_color3','u_proportion','u_softness','u_shape','u_shapeScale','u_distortion',
+   'u_swirl','u_swirlIterations'].forEach(function(n){ U[n]=gl.getUniformLocation(pg,n); });
+
+  var pr = Math.min(devicePixelRatio||1, 1.25);
+  var lastW=0, lastH=0;
+  function size(){
+    var w=Math.max(1,innerWidth), h=Math.max(1,innerHeight);
+    // en móvil la barra de direcciones cambia la altura al hacer scroll;
+    // solo redimensionamos si el cambio es real, no por ese vaivén
+    if(Math.abs(w-lastW)<2 && Math.abs(h-lastH)<90) return;
+    lastW=w; lastH=h;
+    cv.width=Math.round(w*pr); cv.height=Math.round(h*pr);
+    cv.style.width=w+'px'; cv.style.height=h+'px';
+    gl.viewport(0,0,cv.width,cv.height);
+  }
+  size();
+  addEventListener('resize',size,{passive:true});
+  addEventListener('orientationchange',size,{passive:true});
+
+  var c1=rgb(P.color1), c2=rgb(P.color2), c3=rgb(P.color3);
+  function frame(elapsed){
+    gl.uniform1f(U.u_time, elapsed*((P.speed/100)*5) + P.offset*0.01);
+    gl.uniform2f(U.u_resolution, cv.width, cv.height);
+    gl.uniform1f(U.u_pixelRatio, pr);
+    gl.uniform1f(U.u_scale, P.scale);
+    gl.uniform1f(U.u_rotation, P.rotation*Math.PI/180);
+    gl.uniform4f(U.u_color1,c1[0],c1[1],c1[2],c1[3]);
+    gl.uniform4f(U.u_color2,c2[0],c2[1],c2[2],c2[3]);
+    gl.uniform4f(U.u_color3,c3[0],c3[1],c3[2],c3[3]);
+    gl.uniform1f(U.u_proportion, P.proportion/100);
+    gl.uniform1f(U.u_softness, P.softness/100);
+    gl.uniform1f(U.u_shape, 0);
+    gl.uniform1f(U.u_shapeScale, P.shapeSize/100);
+    gl.uniform1f(U.u_distortion, P.distortion/50);
+    gl.uniform1f(U.u_swirl, P.swirl/100);
+    gl.uniform1f(U.u_swirlIterations, P.swirl===0?0:P.swirlIterations);
+    gl.drawArrays(gl.TRIANGLES,0,6);
+    cv.classList.add('on');
+  }
+
+  if(reduce){ frame(6); return; } // un solo fotograma, sin animación
+
+  var t0=null, raf=null, live=false;
+  function loop(ts){
+    if(t0===null) t0=ts;
+    frame((ts-t0)/1000);
+    raf=requestAnimationFrame(loop);
+  }
+  function start(){ if(live) return; live=true; raf=requestAnimationFrame(loop); }
+  function stop(){ live=false; if(raf) cancelAnimationFrame(raf); raf=null; }
+
+  start();
+
+  document.addEventListener('visibilitychange', function(){
+    document.hidden ? stop() : start();
+  });
+})();
+})();
+</script>
+</body>
+</html>
