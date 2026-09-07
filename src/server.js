@@ -33,7 +33,28 @@ const PORT = process.env.PORT || 8080;
 // MIDDLEWARES DE SEGURIDAD
 // =====================
 
-app.use(helmet());
+// La landing y el panel admin usan JS/CSS inline por diseño (sin bundler),
+// así que la CSP debe permitirlo explícitamente vía header — un <meta> CSP en
+// el HTML no basta: cuando hay header + meta, el navegador aplica la
+// intersección (la más restrictiva gana), y el helmet() por defecto sin
+// configurar bloqueaba todo el script inline (pantalla en negro).
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-inline'"],
+      scriptSrcAttr: ["'unsafe-inline'"],
+      styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
+      fontSrc: ["'self'", 'https://fonts.gstatic.com', 'data:'],
+      imgSrc: ["'self'", 'data:'],
+      connectSrc: ["'self'", 'wss:', 'ws:'],
+      frameAncestors: ["'self'"],
+      baseUri: ["'self'"],
+      formAction: ["'self'"],
+      objectSrc: ["'none'"]
+    }
+  }
+}));
 app.use(cors({ origin: process.env.CORS_ORIGIN || '*' }));
 
 // Rate limiting
