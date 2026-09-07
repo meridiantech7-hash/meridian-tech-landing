@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MeridianTech - Panel Administrativo</title>
+<meta name="robots" content="noindex, nofollow">
+<style>
+  :root{
+    --bg:#0a0e1a; --panel:#12182b; --panel2:#161d33; --border:#232b45;
+    --text:#e8ecf8; --muted:#8b93b0; --accent:#3d7fff; --accent2:#21d1c4;
+    --danger:#ff5470; --ok:#2ecc71; --warn:#f5a623;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;min-height:100vh;}
+  .hidden{display:none!important;}
+
+  /* LOGIN */
+  #loginView{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;}
+  .login-box{background:var(--panel);border:1px solid var(--border);border-radius:16px;padding:40px;width:100%;max-width:380px;}
+  .login-box h1{font-size:22px;margin:0 0 4px;}
+  .login-box p{color:var(--muted);margin:0 0 28px;font-size:14px;}
+  label{display:block;font-size:13px;color:var(--muted);margin-bottom:6px;}
+  input{width:100%;padding:12px 14px;background:var(--panel2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:14px;margin-bottom:16px;}
+  input:focus{outline:none;border-color:var(--accent);}
+  button{cursor:pointer;border:none;border-radius:8px;font-weight:600;font-size:14px;padding:12px 18px;}
+  .btn-primary{background:var(--accent);color:#fff;width:100%;}
+  .btn-primary:hover{background:#2f6fe0;}
+  #loginError{color:var(--danger);font-size:13px;margin-top:10px;display:none;}
+
+  /* APP */
+  #appView{display:none;}
+  header{display:flex;align-items:center;justify-content:space-between;padding:16px 28px;border-bottom:1px solid var(--border);background:var(--panel);}
+  header .brand{font-weight:700;font-size:16px;letter-spacing:.3px;}
+  header .brand span{color:var(--accent2);}
+  header .user{display:flex;align-items:center;gap:14px;font-size:13px;color:var(--muted);}
+  header button{background:transparent;border:1px solid var(--border);color:var(--muted);padding:8px 14px;}
+  header button:hover{border-color:var(--danger);color:var(--danger);}
+
+  .tabs{display:flex;gap:4px;padding:16px 28px 0;border-bottom:1px solid var(--border);}
+  .tab{padding:10px 16px;border-radius:8px 8px 0 0;color:var(--muted);cursor:pointer;font-size:14px;font-weight:500;}
+  .tab.active{color:var(--text);background:var(--panel);border:1px solid var(--border);border-bottom:1px solid var(--panel);margin-bottom:-1px;}
+
+  main{padding:28px;max-width:1200px;margin:0 auto;}
+  .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;margin-bottom:24px;}
+  .card{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:20px;}
+  .card .label{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;}
+  .card .value{font-size:26px;font-weight:700;}
+
+  .panel{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:22px;margin-bottom:20px;}
+  .panel-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;}
+  .panel-header h2{margin:0;font-size:16px;}
+
+  table{width:100%;border-collapse:collapse;font-size:13px;}
+  th{text-align:left;color:var(--muted);font-weight:600;padding:10px 12px;border-bottom:1px solid var(--border);text-transform:uppercase;font-size:11px;letter-spacing:.4px;}
+  td{padding:12px;border-bottom:1px solid var(--border);}
+  tr:last-child td{border-bottom:none;}
+  .badge{display:inline-block;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600;}
+  .badge-active,.badge-completed{background:rgba(46,204,113,.15);color:var(--ok);}
+  .badge-pending{background:rgba(245,166,35,.15);color:var(--warn);}
+  .badge-failed,.badge-inactive{background:rgba(255,84,112,.15);color:var(--danger);}
+
+  .btn-sm{padding:7px 12px;font-size:12px;background:var(--accent);color:#fff;}
+  .btn-outline{padding:7px 12px;font-size:12px;background:transparent;border:1px solid var(--border);color:var(--text);}
+
+  .form-grid{display:grid;grid-template-columns:1fr 1fr;gap:0 16px;}
+  .form-grid input{margin-bottom:12px;}
+  .empty{color:var(--muted);text-align:center;padding:30px;font-size:14px;}
+  .toast{position:fixed;bottom:24px;right:24px;background:var(--panel2);border:1px solid var(--border);border-radius:10px;padding:14px 20px;font-size:13px;box-shadow:0 8px 24px rgba(0,0,0,.4);z-index:999;display:none;}
+  .toast.show{display:block;}
+  .toast.error{border-color:var(--danger);color:var(--danger);}
+  .toast.success{border-color:var(--ok);color:var(--ok);}
+</style>
+</head>
+<body>
+
+<!-- LOGIN -->
+<div id="loginView">
+  <div class="login-box">
+    <h1>MeridianTech</h1>
+    <p>Panel administrativo · Acceso restringido</p>
+    <form id="loginForm">
+      <label for="email">Correo electrónico</label>
+      <input type="email" id="email" required autocomplete="username">
+      <label for="password">Contraseña</label>
+      <input type="password" id="password" required autocomplete="current-password">
+      <button type="submit" class="btn-primary">Ingresar</button>
+      <div id="loginError"></div>
+    </form>
+  </div>
+</div>
+
+<!-- APP -->
+<div id="appView">
+  <header>
+    <div class="brand">Meridian<span>Tech</span> · Panel</div>
+    <div class="user">
+      <span id="userName"></span>
+      <button id="logoutBtn">Cerrar sesión</button>
+    </div>
+  </header>
+
+  <div class="tabs">
+    <div class="tab active" data-tab="overview">Resumen</div>
+    <div class="tab" data-tab="clients">Clientes</div>
+    <div class="tab" data-tab="plans">Planes</div>
+    <div class="tab" data-tab="history">Historial de pagos</div>
+  </div>
+
+  <main>
+    <!-- OVERVIEW -->
+    <section id="tab-overview">
+      <div class="cards">
+        <div class="card"><div class="label">Clientes activos</div><div class="value" id="statClients">—</div></div>
+        <div class="card"><div class="label">Planes activos</div><div class="value" id="statPlans">—</div></div>
+        <div class="card"><div class="label">Pagos completados</div><div class="value" id="statPaid">—</div></div>
+        <div class="card"><div class="label">Pagos pendientes</div><div class="value" id="statPending">—</div></div>
+      </div>
+      <div class="panel">
+        <div class="panel-header"><h2>Últimas transacciones</h2></div>
+        <div id="recentTx"></div>
+      </div>
+    </section>
+
+    <!-- CLIENTS -->
+    <section id="tab-clients" class="hidden">
+      <div class="panel">
+        <div class="panel-header">
+          <h2>Nuevo cliente</h2>
+        </div>
+        <form id="clientForm" class="form-grid">
+          <input type="text" id="c_name" placeholder="Nombre completo *" required>
+          <input type="email" id="c_email" placeholder="Correo electrónico *" required>
+          <input type="text" id="c_phone" placeholder="Teléfono">
+          <input type="text" id="c_company" placeholder="Empresa">
+          <input type="text" id="c_city" placeholder="Ciudad">
+          <input type="text" id="c_tax_id" placeholder="NIT / Cédula">
+          <div></div>
+          <button type="submit" class="btn-primary" style="width:auto;justify-self:end;">Crear cliente</button>
+        </form>
+      </div>
+      <div class="panel">
+        <div class="panel-header"><h2>Todos los clientes</h2></div>
+        <div id="clientsTable"></div>
+      </div>
+    </section>
+
+    <!-- PLANS -->
+    <section id="tab-plans" class="hidden">
+      <div class="panel">
+        <div class="panel-header"><h2>Planes disponibles</h2></div>
+        <div id="plansTable"></div>
+      </div>
+    </section>
+
+    <!-- HISTORY -->
+    <section id="tab-history" class="hidden">
+      <div class="panel">
+        <div class="panel-header"><h2>Historial completo de pagos</h2></div>
+        <div id="historyTable"></div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const API = '/api';
+let token = localStorage.getItem('mt_token') || '';
+let userName = localStorage.getItem('mt_user') || '';
+
+function toast(msg, type='success'){
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast show ' + type;
+  setTimeout(()=> t.className = 'toast', 3000);
+}
+
+function fmtMoney(n, cur='COP'){
+  if(n===null||n===undefined) return '$0';
+  return new Intl.NumberFormat('es-CO',{style:'currency',currency:cur,maximumFractionDigits:0}).format(n);
+}
+
+function fmtDate(d){
+  if(!d) return '—';
+  return new Date(d.replace(' ','T')+'Z').toLocaleString('es-CO',{dateStyle:'medium',timeStyle:'short'});
+}
+
+async function api(path, opts={}){
+  const res = await fetch(API+path, {
+    ...opts,
+    headers: {
+      'Content-Type':'application/json',
+      ...(token ? {'Authorization':'Bearer '+token} : {}),
+      ...(opts.headers||{})
+    }
+  });
+  const data = await res.json().catch(()=>({}));
+  if(!res.ok){
+    throw new Error(data.error || 'Error en la petición');
+  }
+  return data;
+}
+
+// ===== LOGIN =====
+document.getElementById('loginForm').addEventListener('submit', async (e)=>{
+  e.preventDefault();
+  const email = document.getElementById('email').value;
+  const password = document.getElementById('password').value;
+  const errEl = document.getElementById('loginError');
+  errEl.style.display = 'none';
+  try{
+    const res = await api('/auth/login', {method:'POST', body: JSON.stringify({email,password})});
+    token = res.data.accessToken;
+    userName = res.data.user.name;
+    localStorage.setItem('mt_token', token);
+    localStorage.setItem('mt_user', userName);
+    showApp();
+  }catch(err){
+    errEl.textContent = err.message;
+    errEl.style.display = 'block';
+  }
+});
+
+document.getElementById('logoutBtn').addEventListener('click', ()=>{
+  token=''; localStorage.removeItem('mt_token'); localStorage.removeItem('mt_user');
+  document.getElementById('appView').style.display='none';
+  document.getElementById('loginView').style.display='flex';
+});
+
+function showApp(){
+  document.getElementById('loginView').style.display='none';
+  document.getElementById('appView').style.display='block';
+  document.getElementById('userName').textContent = userName;
+  loadOverview();
+}
+
+if(token){ showApp(); }
+
+// ===== TABS =====
+document.querySelectorAll('.tab').forEach(tab=>{
+  tab.addEventListener('click', ()=>{
+    document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+    document.querySelectorAll('main > section').forEach(s=>s.classList.add('hidden'));
+    tab.classList.add('active');
+    document.getElementById('tab-'+tab.dataset.tab).classList.remove('hidden');
+    if(tab.dataset.tab==='clients') loadClients();
+    if(tab.dataset.tab==='plans') loadPlans();
+    if(tab.dataset.tab==='history') loadHistory();
+  });
+});
+
+// ===== OVERVIEW =====
+async function loadOverview(){
+  try{
+    const [clientsRes, plansRes, historyRes] = await Promise.all([
+      api('/clients?limit=100'),
+      api('/plans'),
+      api('/payments/history/all?limit=10')
+    ]);
+    document.getElementById('statClients').textContent = clientsRes.pagination.total;
+    document.getElementById('statPlans').textContent = plansRes.data.length;
+    const completed = historyRes.data.filter(t=>t.status==='completed').length;
+    const pending = historyRes.data.filter(t=>t.status==='pending').length;
+    document.getElementById('statPaid').textContent = completed;
+    document.getElementById('statPending').textContent = pending;
+
+    const rows = historyRes.data.slice(0,8).map(t=>`
+      <tr>
+        <td>${t.client_name}</td>
+        <td>${t.plan_name}</td>
+        <td>${fmtMoney(t.amount, t.currency)}</td>
+        <td><span class="badge badge-${t.status}">${t.status}</span></td>
+        <td>${fmtDate(t.created_at)}</td>
+      </tr>`).join('');
+
+    document.getElementById('recentTx').innerHTML = historyRes.data.length ? `
+      <table><thead><tr><th>Cliente</th><th>Plan</th><th>Monto</th><th>Estado</th><th>Fecha</th></tr></thead>
+      <tbody>${rows}</tbody></table>` : '<div class="empty">Aún no hay transacciones registradas</div>';
+  }catch(err){ toast(err.message,'error'); }
+}
+
+// ===== CLIENTS =====
+document.getElementById('clientForm').addEventListener('submit', async (e)=>{
+  e.preventDefault();
+  const body = {
+    name: document.getElementById('c_name').value,
+    email: document.getElementById('c_email').value,
+    phone: document.getElementById('c_phone').value || undefined,
+    company: document.getElementById('c_company').value || undefined,
+    city: document.getElementById('c_city').value || undefined,
+    tax_id: document.getElementById('c_tax_id').value || undefined,
+  };
+  try{
+    await api('/clients', {method:'POST', body: JSON.stringify(body)});
+    toast('Cliente creado exitosamente');
+    e.target.reset();
+    loadClients();
+  }catch(err){ toast(err.message,'error'); }
+});
+
+async function loadClients(){
+  try{
+    const res = await api('/clients?limit=100');
+    const rows = res.data.map(c=>`
+      <tr>
+        <td>${c.name}</td>
+        <td>${c.email}</td>
+        <td>${c.company||'—'}</td>
+        <td>${c.phone||'—'}</td>
+        <td>${c.plans||'Sin plan'}</td>
+        <td>${fmtMoney(c.total_paid||0)}</td>
+        <td><span class="badge badge-${c.status}">${c.status}</span></td>
+      </tr>`).join('');
+    document.getElementById('clientsTable').innerHTML = res.data.length ? `
+      <table><thead><tr><th>Nombre</th><th>Email</th><th>Empresa</th><th>Teléfono</th><th>Plan</th><th>Total pagado</th><th>Estado</th></tr></thead>
+      <tbody>${rows}</tbody></table>` : '<div class="empty">Aún no hay clientes registrados</div>';
+  }catch(err){ toast(err.message,'error'); }
+}
+
+// ===== PLANS =====
+async function loadPlans(){
+  try{
+    const res = await api('/plans');
+    const rows = res.data.map(p=>`
+      <tr>
+        <td><strong>${p.name}</strong></td>
+        <td>${p.description||'—'}</td>
+        <td>${fmtMoney(p.price, p.currency)}/${p.billing_cycle==='monthly'?'mes':'año'}</td>
+        <td>${(p.features||[]).join(', ')}</td>
+        <td><span class="badge badge-${p.status==='active'?'active':'inactive'}">${p.status}</span></td>
+      </tr>`).join('');
+    document.getElementById('plansTable').innerHTML = res.data.length ? `
+      <table><thead><tr><th>Plan</th><th>Descripción</th><th>Precio</th><th>Características</th><th>Estado</th></tr></thead>
+      <tbody>${rows}</tbody></table>` : '<div class="empty">No hay planes configurados</div>';
+  }catch(err){ toast(err.message,'error'); }
+}
+
+// ===== HISTORY =====
+async function loadHistory(){
+  try{
+    const res = await api('/payments/history/all?limit=100');
+    const rows = res.data.map(t=>`
+      <tr>
+        <td>${t.client_name}<br><span style="color:var(--muted);font-size:11px;">${t.client_email}</span></td>
+        <td>${t.plan_name}</td>
+        <td>${fmtMoney(t.amount, t.currency)}</td>
+        <td><span class="badge badge-${t.status}">${t.status}</span></td>
+        <td>${t.payment_method||'—'}</td>
+        <td>${fmtDate(t.created_at)}</td>
+      </tr>`).join('');
+    document.getElementById('historyTable').innerHTML = res.data.length ? `
+      <table><thead><tr><th>Cliente</th><th>Plan</th><th>Monto</th><th>Estado</th><th>Método</th><th>Fecha</th></tr></thead>
+      <tbody>${rows}</tbody></table>` : '<div class="empty">Aún no hay pagos registrados</div>';
+  }catch(err){ toast(err.message,'error'); }
+}
+</script>
+</body>
+</html>

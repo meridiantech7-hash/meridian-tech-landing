@@ -1,13 +1,36 @@
 {
   "name": "meridian-tech-landing",
-  "version": "1.0.0",
-  "description": "MeridianTech - Software, IA y Automatizacion",
-  "main": "server.js",
+  "version": "2.0.0",
+  "description": "MeridianTech - Software, IA y Automatizacion - Sistema Completo",
+  "main": "src/server.js",
   "scripts": {
-    "start": "node server.js",
-    "dev": "node server.js"
+    "start": "node src/server.js",
+    "dev": "node src/server.js",
+    "setup": "node src/config/setupDatabase.js"
   },
   "dependencies": {
-    "express": "^4.18.2"
-  }
+    "express": "^4.18.2",
+    "sqlite3": "^5.1.6",
+    "bcryptjs": "^2.4.3",
+    "jsonwebtoken": "^9.0.0",
+    "joi": "^17.9.2",
+    "dotenv": "^16.0.3",
+    "cors": "^2.8.5",
+    "axios": "^1.3.4",
+    "nodemailer": "^6.9.1",
+    "express-rate-limit": "^6.7.0",
+    "helmet": "^7.0.0",
+    "morgan": "^1.10.0"
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  },
+  "keywords": [
+    "meridian",
+    "payments",
+    "bold",
+    "saas"
+  ],
+  "author": "MeridianTech",
+  "license": "MIT"
 }

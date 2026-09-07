@@ -1,0 +1,32 @@
+# Dependencias
+node_modules/
+package-lock.json
+
+# Variables de entorno (NUNCA subir credenciales)
+.env
+.env.local
+.env.production
+
+# Base de datos
+data/
+*.db
+*.sqlite
+
+# Logs
+logs/
+*.log
+
+# Sistema operativo
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+
+# Railway
+.railway/
+
+# Backups
+*.bak
+*.backup
