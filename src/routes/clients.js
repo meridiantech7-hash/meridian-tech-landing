@@ -19,31 +19,47 @@ const clientSchema = Joi.object({
   notes: Joi.string()
 });
 
-// GET /api/clients - Listar todos los clientes
+// GET /api/clients - Listar todos los clientes (con búsqueda tipo "inventario")
 router.get('/', verifyToken, async (req, res, next) => {
   try {
     const page = Math.max(1, parseInt(req.query.page) || 1);
     const limit = Math.min(100, parseInt(req.query.limit) || 20);
     const offset = (page - 1) * limit;
+    const search = (req.query.search || '').trim();
+
+    let searchClause = '';
+    const searchParams = [];
+    if (search) {
+      searchClause = 'AND (c.name LIKE ? OR c.email LIKE ? OR c.company LIKE ? OR c.phone LIKE ? OR c.tax_id LIKE ?)';
+      const like = `%${search}%`;
+      searchParams.push(like, like, like, like, like);
+    }
 
     const clients = await dbAll(
       `SELECT c.*,
         COUNT(DISTINCT s.id) as active_subscriptions,
-        SUM(CASE WHEN t.status = 'completed' THEN t.amount ELSE 0 END) as total_paid
+        SUM(CASE WHEN t.status = 'completed' THEN t.amount ELSE 0 END) as total_paid,
+        MAX(CASE WHEN s.status = 'active' THEN p.name END) as current_plan,
+        MAX(CASE WHEN s.status = 'active' THEN s.renewal_date END) as next_cutoff_date,
+        MAX(CASE WHEN s.status = 'active' THEN p.price END) as current_plan_price
        FROM clients c
        LEFT JOIN subscriptions s ON c.id = s.client_id AND s.status = 'active'
+       LEFT JOIN plans p ON s.plan_id = p.id
        LEFT JOIN transactions t ON c.id = t.client_id
-       WHERE c.status = 'active'
+       WHERE c.status = 'active' ${searchClause}
        GROUP BY c.id
        ORDER BY c.created_at DESC
        LIMIT ? OFFSET ?`,
-      [limit, offset]
+      [...searchParams, limit, offset]
     );
 
-    const countResult = await dbGet('SELECT COUNT(*) as total FROM clients WHERE status = ?', ['active']);
+    const countResult = await dbGet(
+      `SELECT COUNT(*) as total FROM clients c WHERE c.status = 'active' ${searchClause}`,
+      searchParams
+    );
     const total = countResult.total;
 
-    logger.info('Clientes listados', { page, limit, total });
+    logger.info('Clientes listados', { page, limit, total, search: search || undefined });
 
     res.json({
       success: true,
@@ -60,27 +76,50 @@ router.get('/', verifyToken, async (req, res, next) => {
   }
 });
 
-// GET /api/clients/:id - Obtener un cliente
+// GET /api/clients/:id - Obtener un cliente (perfil / estado de cuenta completo)
 router.get('/:id', verifyToken, async (req, res, next) => {
   try {
     const client = await dbGet(
-      `SELECT c.*,
-        COUNT(DISTINCT s.id) as active_subscriptions,
-        GROUP_CONCAT(p.name, ', ') as plans
-       FROM clients c
-       LEFT JOIN subscriptions s ON c.id = s.client_id AND s.status = 'active'
-       LEFT JOIN plans p ON s.plan_id = p.id
-       WHERE c.id = ? AND c.status = 'active'
-       GROUP BY c.id`,
-      [req.params.id]
+      'SELECT * FROM clients WHERE id = ? AND status = ?',
+      [req.params.id, 'active']
     );
 
     if (!client) {
       return res.status(404).json({ error: 'Cliente no encontrado' });
     }
 
+    // Estado de cuenta: suscripciones activas con plan y fecha de corte
+    const subscriptions = await dbAll(
+      `SELECT s.*, p.name as plan_name, p.price, p.currency, p.billing_cycle
+       FROM subscriptions s
+       JOIN plans p ON s.plan_id = p.id
+       WHERE s.client_id = ?
+       ORDER BY s.status = 'active' DESC, s.created_at DESC`,
+      [client.id]
+    );
+
+    const totalPaidResult = await dbGet(
+      `SELECT COALESCE(SUM(amount), 0) as total_paid, COUNT(*) as total_transactions
+       FROM transactions WHERE client_id = ? AND status = 'completed'`,
+      [client.id]
+    );
+
+    const lastActivity = await dbAll(
+      `SELECT action, entity, created_at FROM activity_logs WHERE client_id = ? ORDER BY created_at DESC LIMIT 10`,
+      [client.id]
+    );
+
     logger.info('Cliente obtenido', { clientId: client.id });
-    res.json({ success: true, data: client });
+    res.json({
+      success: true,
+      data: {
+        ...client,
+        subscriptions,
+        total_paid: totalPaidResult.total_paid,
+        total_transactions: totalPaidResult.total_transactions,
+        recent_activity: lastActivity
+      }
+    });
   } catch (error) {
     next(error);
   }
