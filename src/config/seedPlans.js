@@ -54,8 +54,7 @@ const plans = [
 ];
 
 async function seedPlans() {
-  try {
-    logger.info('🌱 Sembrando planes iniciales...');
+  logger.info('🌱 Sembrando planes iniciales...');
 
     for (const plan of plans) {
       const existing = await dbGet('SELECT id FROM plans WHERE name = ?', [plan.name]);
@@ -96,16 +95,16 @@ async function seedPlans() {
     }
 
     logger.info('✅ Planes sembrados exitosamente');
-    await close();
-    process.exit(0);
-  } catch (error) {
-    logger.error('❌ Error sembrando planes', error);
-    process.exit(1);
-  }
 }
 
 if (require.main === module) {
-  seedPlans();
+  seedPlans()
+    .then(async () => { await close(); process.exit(0); })
+    .catch(async (error) => {
+      logger.error('❌ Error sembrando planes', error);
+      await close();
+      process.exit(1);
+    });
 }
 
 module.exports = seedPlans;

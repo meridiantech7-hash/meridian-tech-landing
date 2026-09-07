@@ -126,6 +126,13 @@ async function startServer() {
       }
     }
 
+    // Sembrar planes iniciales si no existen
+    const planCount = await dbGet('SELECT COUNT(*) as total FROM plans');
+    if (!planCount || planCount.total === 0) {
+      const seedPlans = require('./config/seedPlans');
+      await seedPlans();
+    }
+
     // Iniciar servidor
     app.listen(PORT, () => {
       logger.info(`🚀 Servidor iniciado en puerto ${PORT}`);
