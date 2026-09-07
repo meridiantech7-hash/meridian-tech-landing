@@ -169,7 +169,7 @@ CREATE TABLE IF NOT EXISTS bot_configs (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   client_id INTEGER NOT NULL UNIQUE,
   ai_provider TEXT DEFAULT 'gemini',
-  ai_model TEXT DEFAULT 'gemini-2.5-flash',
+  ai_model TEXT DEFAULT 'gemini-3.6-flash',
   system_prompt TEXT,             -- personalidad/instrucciones del bot
   business_rules TEXT,            -- reglas de negocio en JSON (horarios, políticas, etc.)
   knowledge_base TEXT,            -- conocimiento previo: catálogo, precios, FAQs (texto libre)
