@@ -20,6 +20,7 @@ const clientsRoutes = require('./routes/clients');
 const plansRoutes = require('./routes/plans');
 const paymentsRoutes = require('./routes/payments');
 const { router: conversationsRoutes, setIO } = require('./routes/conversations');
+const botConfigRoutes = require('./routes/botConfig');
 
 const app = express();
 const httpServer = http.createServer(app);
@@ -102,6 +103,7 @@ app.use('/api/clients', clientsRoutes);
 app.use('/api/plans', plansRoutes);
 app.use('/api/payments', paymentsRoutes);
 app.use('/api/conversations', conversationsRoutes);
+app.use('/api/bot-config', botConfigRoutes);
 
 // =====================
 // SOCKET.IO — supervisión en vivo del bot por conversación
@@ -191,12 +193,14 @@ async function startServer() {
       }
     }
 
-    // Sembrar planes iniciales si no existen
-    const planCount = await dbGet('SELECT COUNT(*) as total FROM plans');
-    if (!planCount || planCount.total === 0) {
-      const seedPlans = require('./config/seedPlans');
-      await seedPlans();
-    }
+    // Sembrar/actualizar planes (la función ya hace UPDATE si el plan existe,
+    // así que corre siempre para que los ajustes de precio se apliquen)
+    const seedPlans = require('./config/seedPlans');
+    await seedPlans();
+
+    // Sembrar usuario de Juan + cliente interno MeridianTech (capa B del flujo)
+    const seedInternal = require('./config/seedInternal');
+    await seedInternal();
 
     // Iniciar servidor (http server, no app, para que Socket.io funcione)
     httpServer.listen(PORT, () => {

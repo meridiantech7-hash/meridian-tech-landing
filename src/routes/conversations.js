@@ -2,6 +2,7 @@ const express = require('express');
 const Joi = require('joi');
 const { verifyToken } = require('../middleware/auth');
 const { dbGet, dbAll, dbRun } = require('../config/database');
+const geminiService = require('../services/geminiService');
 const logger = require('../utils/logger');
 
 const router = express.Router();
@@ -144,6 +145,111 @@ router.post('/:id/messages', verifyToken, async (req, res, next) => {
     emitToClient(conversation.client_id, 'conversation:new_message', message);
 
     res.status(201).json({ success: true, data: message });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// POST /api/conversations/incoming — punto de entrada único para CUALQUIER
+// proveedor de mensajería (Twilio/360dialog/Meta directo). El conector real
+// de cada canal (aún por conectar, ver INFRAESTRUCTURA.md) solo necesita
+// traducir su payload a esta forma; toda la lógica de bot/derivación vive
+// aquí una sola vez.
+//
+// ⚠️ Sin autenticación de usuario porque no la llama un admin logueado sino
+// el conector del proveedor — cuando se conecte Twilio real, esta ruta debe
+// protegerse verificando la firma de la petición (igual que el webhook de
+// Bold en payments.js), no con verifyToken.
+const incomingSchema = Joi.object({
+  client_id: Joi.number().integer().required(),
+  channel_type: Joi.string().valid('whatsapp', 'instagram', 'messenger').required(),
+  end_customer_id: Joi.string().required(),
+  end_customer_name: Joi.string().allow(''),
+  text: Joi.string().allow(''),
+  imageBase64: Joi.string(),
+  imageMimeType: Joi.string(),
+  audioBase64: Joi.string(),
+  audioMimeType: Joi.string()
+}).or('text', 'imageBase64', 'audioBase64');
+
+router.post('/incoming', async (req, res, next) => {
+  try {
+    const { error, value } = incomingSchema.validate(req.body);
+    if (error) {
+      error.isJoi = true;
+      throw error;
+    }
+
+    // 1. Buscar o crear la conversación
+    let conversation = await dbGet(
+      'SELECT * FROM conversations WHERE client_id = ? AND channel_type = ? AND end_customer_id = ?',
+      [value.client_id, value.channel_type, value.end_customer_id]
+    );
+
+    if (!conversation) {
+      const result = await dbRun(
+        `INSERT INTO conversations (client_id, channel_type, end_customer_id, end_customer_name, mode, last_message_at)
+         VALUES (?, ?, ?, ?, 'bot', CURRENT_TIMESTAMP)`,
+        [value.client_id, value.channel_type, value.end_customer_id, value.end_customer_name || null]
+      );
+      conversation = await dbGet('SELECT * FROM conversations WHERE id = ?', [result.id]);
+    }
+
+    // 2. Guardar el mensaje entrante del cliente final
+    const incomingText = value.text || (value.imageBase64 ? '[imagen]' : '[audio]');
+    await dbRun(
+      'INSERT INTO messages (conversation_id, sender_type, content) VALUES (?, ?, ?)',
+      [conversation.id, 'end_customer', incomingText]
+    );
+    await dbRun(
+      'UPDATE conversations SET last_message_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+      [conversation.id]
+    );
+    emitToClient(conversation.client_id, 'conversation:new_message', {
+      conversation_id: conversation.id, sender_type: 'end_customer', content: incomingText, created_at: new Date().toISOString()
+    });
+
+    // 3. Si el bot está pausado o en modo humano, no responder automáticamente
+    if (conversation.mode !== 'bot') {
+      logger.info('Mensaje recibido pero el bot no está activo en esta conversación', { conversationId: conversation.id, mode: conversation.mode });
+      return res.json({ success: true, data: { conversationId: conversation.id, botResponded: false, mode: conversation.mode } });
+    }
+
+    // 4. Historial reciente para dar contexto al bot
+    const history = await dbAll(
+      'SELECT sender_type, content FROM messages WHERE conversation_id = ? ORDER BY created_at ASC LIMIT 20',
+      [conversation.id]
+    );
+
+    const { handoff, reply } = await geminiService.generateBotResponse(value.client_id, history.slice(0, -1), {
+      text: value.text,
+      imageBase64: value.imageBase64,
+      imageMimeType: value.imageMimeType,
+      audioBase64: value.audioBase64,
+      audioMimeType: value.audioMimeType
+    });
+
+    if (handoff) {
+      await dbRun('UPDATE conversations SET mode = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', ['human', conversation.id]);
+      await dbRun(
+        'INSERT INTO handoff_events (conversation_id, trigger_type, detail) VALUES (?, ?, ?)',
+        [conversation.id, 'auto', handoff]
+      );
+      logger.info('Derivación automática a humano', { conversationId: conversation.id, reason: handoff });
+      emitToClient(conversation.client_id, 'conversation:mode_changed', { conversationId: conversation.id, mode: 'human', reason: handoff });
+      return res.json({ success: true, data: { conversationId: conversation.id, botResponded: false, handoff } });
+    }
+
+    // 5. Guardar y emitir la respuesta del bot
+    const botMsg = await dbRun('INSERT INTO messages (conversation_id, sender_type, content) VALUES (?, ?, ?)', [conversation.id, 'bot', reply]);
+    await dbRun('UPDATE conversations SET last_message_at = CURRENT_TIMESTAMP WHERE id = ?', [conversation.id]);
+    const botMessage = { id: botMsg.id, conversation_id: conversation.id, sender_type: 'bot', content: reply, created_at: new Date().toISOString() };
+    emitToClient(conversation.client_id, 'conversation:new_message', botMessage);
+
+    // Nota: enviar `reply` de vuelta al cliente final por WhatsApp/IG/Messenger
+    // es responsabilidad del conector del proveedor (aún por conectar), que
+    // debe leer esta respuesta y despacharla por el canal correspondiente.
+    res.json({ success: true, data: { conversationId: conversation.id, botResponded: true, reply } });
   } catch (error) {
     next(error);
   }

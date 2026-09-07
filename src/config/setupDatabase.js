@@ -1,5 +1,28 @@
-const { dbExec } = require('./database');
+const { dbExec, dbRun } = require('./database');
 const logger = require('../utils/logger');
+
+// Migraciones incrementales seguras: agregan columnas nuevas a tablas que ya
+// existían en producción sin borrar datos. Cada ALTER se intenta y se ignora
+// si la columna ya existe (SQLite no soporta "ADD COLUMN IF NOT EXISTS").
+const migrations = [
+  "ALTER TABLE plans ADD COLUMN messages_included INTEGER DEFAULT 0",
+  "ALTER TABLE plans ADD COLUMN message_overage_price INTEGER DEFAULT 0",
+  "ALTER TABLE plans ADD COLUMN call_minutes_included INTEGER DEFAULT 0",
+  "ALTER TABLE plans ADD COLUMN minute_overage_price INTEGER DEFAULT 0",
+  "ALTER TABLE clients ADD COLUMN is_internal INTEGER DEFAULT 0"
+];
+
+async function runMigrations() {
+  for (const sql of migrations) {
+    try {
+      await dbRun(sql);
+    } catch (err) {
+      if (!/duplicate column name/i.test(err.message)) {
+        logger.warn('Migración omitida', { sql, error: err.message });
+      }
+    }
+  }
+}
 
 const schema = `
 -- Tabla de Usuarios (Administradores)
@@ -44,6 +67,10 @@ CREATE TABLE IF NOT EXISTS plans (
   features TEXT,
   max_users INTEGER,
   max_storage INTEGER,
+  messages_included INTEGER DEFAULT 0,
+  message_overage_price INTEGER DEFAULT 0,
+  call_minutes_included INTEGER DEFAULT 0,
+  minute_overage_price INTEGER DEFAULT 0,
   status TEXT DEFAULT 'active',
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -134,6 +161,26 @@ CREATE TABLE IF NOT EXISTS conversations (
   FOREIGN KEY (channel_id) REFERENCES channels(id)
 );
 
+-- Configuración del "nodo de IA" por cliente: reglas, conocimiento previo y
+-- condiciones de derivación a humano. Un registro por cliente (capa A =
+-- clientes de MeridianTech, capa B = MeridianTech como su propio cliente
+-- interno). Así cada negocio tiene su bot configurado de forma aislada.
+CREATE TABLE IF NOT EXISTS bot_configs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  client_id INTEGER NOT NULL UNIQUE,
+  ai_provider TEXT DEFAULT 'gemini',
+  ai_model TEXT DEFAULT 'gemini-2.5-flash',
+  system_prompt TEXT,             -- personalidad/instrucciones del bot
+  business_rules TEXT,            -- reglas de negocio en JSON (horarios, políticas, etc.)
+  knowledge_base TEXT,            -- conocimiento previo: catálogo, precios, FAQs (texto libre)
+  handoff_keywords TEXT,          -- JSON array de palabras/frases que derivan a humano
+  max_failed_attempts INTEGER DEFAULT 3,
+  status TEXT DEFAULT 'active',
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE
+);
+
 -- Mensajes individuales de cada conversación (para supervisión en vivo)
 CREATE TABLE IF NOT EXISTS messages (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -178,6 +225,7 @@ async function setupDatabase() {
   logger.info('🗄️  Inicializando base de datos...');
 
   await dbExec(schema);
+  await runMigrations();
 
   logger.info('✅ Base de datos inicializada correctamente');
   logger.info('📊 Tablas creadas:');
@@ -191,6 +239,7 @@ async function setupDatabase() {
   logger.info('   - conversations (Conversaciones bot ↔ cliente final)');
   logger.info('   - messages (Mensajes para supervisión en vivo)');
   logger.info('   - handoff_events (Auditoría de derivación a humano)');
+  logger.info('   - bot_configs (Reglas/conocimiento del nodo de IA por cliente)');
 }
 
 // Ejecutar si se llama directamente vía CLI (npm run setup)

@@ -16,7 +16,11 @@ const plans = [
       '1 usuario administrador'
     ],
     max_users: 1,
-    max_storage: 5
+    max_storage: 5,
+    messages_included: 30000,
+    message_overage_price: 50,
+    call_minutes_included: 0,
+    minute_overage_price: 0
   },
   {
     name: 'Pro',
@@ -32,7 +36,11 @@ const plans = [
       'Hasta 5 usuarios administradores'
     ],
     max_users: 5,
-    max_storage: 25
+    max_storage: 25,
+    messages_included: 60000,
+    message_overage_price: 50,
+    call_minutes_included: 50,
+    minute_overage_price: 800
   },
   {
     name: 'Premium',
@@ -49,7 +57,11 @@ const plans = [
       'Consultoría estratégica mensual'
     ],
     max_users: null,
-    max_storage: 100
+    max_storage: 100,
+    messages_included: 120000,
+    message_overage_price: 50,
+    call_minutes_included: 500,
+    minute_overage_price: 800
   }
 ];
 
@@ -62,7 +74,8 @@ async function seedPlans() {
       if (existing) {
         logger.info(`   ↺ Plan "${plan.name}" ya existe, actualizando...`);
         await dbRun(
-          `UPDATE plans SET description = ?, price = ?, currency = ?, billing_cycle = ?, features = ?, max_users = ?, max_storage = ?, updated_at = CURRENT_TIMESTAMP
+          `UPDATE plans SET description = ?, price = ?, currency = ?, billing_cycle = ?, features = ?, max_users = ?, max_storage = ?,
+             messages_included = ?, message_overage_price = ?, call_minutes_included = ?, minute_overage_price = ?, updated_at = CURRENT_TIMESTAMP
            WHERE id = ?`,
           [
             plan.description,
@@ -72,14 +85,19 @@ async function seedPlans() {
             JSON.stringify(plan.features),
             plan.max_users,
             plan.max_storage,
+            plan.messages_included,
+            plan.message_overage_price,
+            plan.call_minutes_included,
+            plan.minute_overage_price,
             existing.id
           ]
         );
       } else {
         logger.info(`   ✓ Creando plan "${plan.name}" - $${plan.price.toLocaleString('es-CO')} COP`);
         await dbRun(
-          `INSERT INTO plans (name, description, price, currency, billing_cycle, features, max_users, max_storage)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO plans (name, description, price, currency, billing_cycle, features, max_users, max_storage,
+             messages_included, message_overage_price, call_minutes_included, minute_overage_price)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             plan.name,
             plan.description,
@@ -88,7 +106,11 @@ async function seedPlans() {
             plan.billing_cycle,
             JSON.stringify(plan.features),
             plan.max_users,
-            plan.max_storage
+            plan.max_storage,
+            plan.messages_included,
+            plan.message_overage_price,
+            plan.call_minutes_included,
+            plan.minute_overage_price
           ]
         );
       }
