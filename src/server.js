@@ -1,6 +1,9 @@
 require('dotenv').config();
 
 const express = require('express');
+const http = require('http');
+const { Server: SocketIOServer } = require('socket.io');
+const jwt = require('jsonwebtoken');
 const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
@@ -16,8 +19,14 @@ const authRoutes = require('./routes/auth');
 const clientsRoutes = require('./routes/clients');
 const plansRoutes = require('./routes/plans');
 const paymentsRoutes = require('./routes/payments');
+const { router: conversationsRoutes, setIO } = require('./routes/conversations');
 
 const app = express();
+const httpServer = http.createServer(app);
+const io = new SocketIOServer(httpServer, {
+  cors: { origin: process.env.CORS_ORIGIN || '*' }
+});
+setIO(io);
 const PORT = process.env.PORT || 8080;
 
 // =====================
@@ -71,6 +80,41 @@ app.use('/api/auth', authRoutes);
 app.use('/api/clients', clientsRoutes);
 app.use('/api/plans', plansRoutes);
 app.use('/api/payments', paymentsRoutes);
+app.use('/api/conversations', conversationsRoutes);
+
+// =====================
+// SOCKET.IO — supervisión en vivo del bot por conversación
+// =====================
+
+io.use((socket, next) => {
+  try {
+    const token = socket.handshake.auth?.token;
+    if (!token) return next(new Error('Token requerido'));
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    socket.user = decoded;
+    next();
+  } catch (err) {
+    next(new Error('Token inválido'));
+  }
+});
+
+io.on('connection', (socket) => {
+  logger.debug('Socket conectado', { userId: socket.user?.id });
+
+  // El dueño/admin se suscribe a la bandeja en vivo de un negocio puntual
+  socket.on('join_client', (clientId) => {
+    socket.join(`client:${clientId}`);
+    logger.debug('Socket unido a sala de cliente', { clientId, userId: socket.user?.id });
+  });
+
+  socket.on('leave_client', (clientId) => {
+    socket.leave(`client:${clientId}`);
+  });
+
+  socket.on('disconnect', () => {
+    logger.debug('Socket desconectado', { userId: socket.user?.id });
+  });
+});
 
 // Panel administrativo
 app.get('/admin', (req, res) => {
@@ -133,13 +177,14 @@ async function startServer() {
       await seedPlans();
     }
 
-    // Iniciar servidor
-    app.listen(PORT, () => {
+    // Iniciar servidor (http server, no app, para que Socket.io funcione)
+    httpServer.listen(PORT, () => {
       logger.info(`🚀 Servidor iniciado en puerto ${PORT}`);
       logger.info(`🌐 URL: ${process.env.APP_URL}`);
       logger.info(`📊 Ambiente: ${process.env.NODE_ENV}`);
       logger.info(`📝 Logs: ./logs/app.log`);
       logger.info(`🔐 Seguridad: HTTPS habilitado, Rate limiting activo`);
+      logger.info(`🔌 Socket.io activo para supervisión en vivo`);
       logger.info('✅ Sistema listo para operar\n');
     });
 

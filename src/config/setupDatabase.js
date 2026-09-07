@@ -102,6 +102,59 @@ CREATE TABLE IF NOT EXISTS activity_logs (
   FOREIGN KEY (client_id) REFERENCES clients(id)
 );
 
+-- Canales conectados por cliente (WhatsApp/Instagram/Messenger, credenciales aisladas por negocio)
+CREATE TABLE IF NOT EXISTS channels (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  client_id INTEGER NOT NULL,
+  channel_type TEXT NOT NULL,            -- whatsapp | instagram | messenger | voice
+  provider TEXT,                          -- ej. twilio, 360dialog, meta_graph
+  external_account_id TEXT,               -- id/número asignado por el proveedor para este cliente
+  status TEXT DEFAULT 'active',           -- active | paused | disconnected
+  owner_notify_phone TEXT,                -- número personal del dueño para alertas de derivación
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE,
+  UNIQUE(client_id, channel_type)
+);
+
+-- Conversaciones entre el bot/negocio y el cliente final (el cliente del cliente)
+CREATE TABLE IF NOT EXISTS conversations (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  client_id INTEGER NOT NULL,             -- negocio dueño de la conversación
+  channel_id INTEGER,
+  channel_type TEXT NOT NULL,             -- whatsapp | instagram | messenger
+  end_customer_id TEXT NOT NULL,          -- teléfono o external id del cliente final
+  end_customer_name TEXT,
+  mode TEXT DEFAULT 'bot',                -- bot | human | paused
+  status TEXT DEFAULT 'open',             -- open | closed
+  last_message_at DATETIME,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE,
+  FOREIGN KEY (channel_id) REFERENCES channels(id)
+);
+
+-- Mensajes individuales de cada conversación (para supervisión en vivo)
+CREATE TABLE IF NOT EXISTS messages (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  conversation_id INTEGER NOT NULL,
+  sender_type TEXT NOT NULL,              -- bot | owner | end_customer
+  content TEXT NOT NULL,
+  external_message_id TEXT,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
+);
+
+-- Eventos de derivación a humano (auditoría de por qué se pausó/reactivó el bot)
+CREATE TABLE IF NOT EXISTS handoff_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  conversation_id INTEGER NOT NULL,
+  trigger_type TEXT NOT NULL,             -- keyword | sentiment | max_attempts | owner_paused | owner_resumed | menu_option
+  detail TEXT,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
+);
+
 -- Índices para mejor desempeño
 CREATE INDEX IF NOT EXISTS idx_clients_email ON clients(email);
 CREATE INDEX IF NOT EXISTS idx_clients_status ON clients(status);
@@ -112,6 +165,13 @@ CREATE INDEX IF NOT EXISTS idx_transactions_status ON transactions(status);
 CREATE INDEX IF NOT EXISTS idx_transactions_created ON transactions(created_at);
 CREATE INDEX IF NOT EXISTS idx_activity_user ON activity_logs(user_id);
 CREATE INDEX IF NOT EXISTS idx_activity_created ON activity_logs(created_at);
+CREATE INDEX IF NOT EXISTS idx_channels_client ON channels(client_id);
+CREATE INDEX IF NOT EXISTS idx_conversations_client ON conversations(client_id);
+CREATE INDEX IF NOT EXISTS idx_conversations_mode ON conversations(mode);
+CREATE INDEX IF NOT EXISTS idx_conversations_last_msg ON conversations(last_message_at);
+CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(conversation_id);
+CREATE INDEX IF NOT EXISTS idx_messages_created ON messages(created_at);
+CREATE INDEX IF NOT EXISTS idx_handoff_conversation ON handoff_events(conversation_id);
 `;
 
 async function setupDatabase() {
@@ -127,6 +187,10 @@ async function setupDatabase() {
   logger.info('   - subscriptions (Suscripciones)');
   logger.info('   - transactions (Transacciones)');
   logger.info('   - activity_logs (Auditoria)');
+  logger.info('   - channels (Canales WhatsApp/Instagram/Messenger/Voz por cliente)');
+  logger.info('   - conversations (Conversaciones bot ↔ cliente final)');
+  logger.info('   - messages (Mensajes para supervisión en vivo)');
+  logger.info('   - handoff_events (Auditoría de derivación a humano)');
 }
 
 // Ejecutar si se llama directamente vía CLI (npm run setup)
