@@ -21,6 +21,7 @@ const plansRoutes = require('./routes/plans');
 const paymentsRoutes = require('./routes/payments');
 const { router: conversationsRoutes, setIO } = require('./routes/conversations');
 const botConfigRoutes = require('./routes/botConfig');
+const metaWebhookRoutes = require('./routes/metaWebhook');
 
 const app = express();
 const httpServer = http.createServer(app);
@@ -58,10 +59,13 @@ app.use(helmet({
 }));
 app.use(cors({ origin: process.env.CORS_ORIGIN || '*' }));
 
-// Rate limiting
+// Rate limiting. Los webhooks quedan exentos: los llaman Meta y Bold, que
+// pueden enviar ráfagas legítimas de eventos y reintentos — limitarlos haría
+// perder mensajes de clientes. Su protección es la firma HMAC, no el límite.
 const limiter = rateLimit({
   windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 900000,
-  max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 100
+  max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 100,
+  skip: (req) => req.path.startsWith('/webhooks/') || req.path.includes('/webhook/')
 });
 app.use('/api/', limiter);
 
@@ -75,7 +79,12 @@ app.use(morgan('combined', {
   }
 }));
 
-app.use(express.json({ limit: '10mb' }));
+// `verify` guarda el cuerpo crudo: Meta firma el POST del webhook con HMAC
+// sobre los bytes exactos, así que hay que conservarlos antes del parseo.
+app.use(express.json({
+  limit: '10mb',
+  verify: (req, res, buf) => { req.rawBody = buf; }
+}));
 app.use(express.urlencoded({ limit: '10mb', extended: true }));
 
 // =====================
@@ -104,6 +113,10 @@ app.use('/api/plans', plansRoutes);
 app.use('/api/payments', paymentsRoutes);
 app.use('/api/conversations', conversationsRoutes);
 app.use('/api/bot-config', botConfigRoutes);
+// Webhook único de Meta (WhatsApp + Instagram + Messenger). Sin verifyToken:
+// lo llama Meta, no un admin; se protege con hub.verify_token (GET) y
+// firma HMAC X-Hub-Signature-256 (POST).
+app.use('/api/webhooks/meta', metaWebhookRoutes);
 
 // =====================
 // SOCKET.IO — supervisión en vivo del bot por conversación
