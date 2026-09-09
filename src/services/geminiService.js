@@ -21,6 +21,48 @@ const DEFAULT_MODEL = 'gemini-3.6-flash';
 const isConfigured = () => !!GEMINI_API_KEY;
 
 /**
+ * Distingue un fallo pasajero de uno real.
+ *
+ * Gemini responde "This model is currently experiencing high demand" y agota el
+ * tiempo de espera en horas pico. Sin reintento, cada uno de esos picos derivaba
+ * la conversación a un humano como si el cliente hubiera pedido hablar con
+ * alguien — el dueño recibe una alerta falsa y el cliente queda esperando.
+ */
+const esFalloPasajero = (error) => {
+  if (error.code === 'ECONNABORTED' || /timeout/i.test(error.message || '')) return true;
+  const status = error.response?.status;
+  if (status === 429 || (status >= 500 && status < 600)) return true;
+  const msg = error.response?.data?.error?.message || '';
+  return /high demand|overloaded|try again later|unavailable/i.test(msg);
+};
+
+const esperar = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Llama a Gemini reintentando solo los fallos pasajeros. Dos intentos como
+ * máximo: más que eso y el cliente percibe la demora, que es peor que derivar.
+ */
+const llamarGemini = async (url, payload, timeout = 20000) => {
+  let ultimo;
+  for (let intento = 1; intento <= 2; intento++) {
+    try {
+      return await axios.post(url, payload, {
+        headers: { 'Content-Type': 'application/json' },
+        timeout
+      });
+    } catch (error) {
+      ultimo = error;
+      if (intento === 2 || !esFalloPasajero(error)) throw error;
+      logger.warn('Gemini saturado, reintentando una vez', {
+        intento, motivo: error.response?.data?.error?.message || error.message
+      });
+      await esperar(1200);
+    }
+  }
+  throw ultimo;
+};
+
+/**
  * Palabras/frases por defecto que siempre disparan derivación a humano,
  * además de las que cada cliente configure en bot_configs.handoff_keywords.
  */
@@ -134,10 +176,7 @@ const generateBotResponse = async (clientId, conversationHistory, incoming) => {
     const model = config.ai_model || DEFAULT_MODEL;
     const url = `${GEMINI_API_URL}/${model}:generateContent?key=${GEMINI_API_KEY}`;
 
-    const response = await axios.post(url, { contents, systemInstruction }, {
-      headers: { 'Content-Type': 'application/json' },
-      timeout: 20000
-    });
+    const response = await llamarGemini(url, { contents, systemInstruction });
 
     const reply = response.data?.candidates?.[0]?.content?.parts?.[0]?.text;
 
@@ -224,7 +263,7 @@ ${config.knowledge_base ? 'CATÁLOGO Y PRECIOS DEL NEGOCIO (úsalo para nombres 
     const model = config.ai_model || DEFAULT_MODEL;
     const url = `${GEMINI_API_URL}/${model}:generateContent?key=${GEMINI_API_KEY}`;
 
-    const response = await axios.post(url, {
+    const response = await llamarGemini(url, {
       systemInstruction: { parts: [{ text: instruction }] },
       contents: [{ role: 'user', parts: [{ text: transcript }] }],
       generationConfig: {
@@ -232,7 +271,7 @@ ${config.knowledge_base ? 'CATÁLOGO Y PRECIOS DEL NEGOCIO (úsalo para nombres 
         responseSchema: schema,
         temperature: 0
       }
-    }, { headers: { 'Content-Type': 'application/json' }, timeout: 20000 });
+    });
 
     const raw = response.data?.candidates?.[0]?.content?.parts?.[0]?.text;
     if (!raw) return null;
