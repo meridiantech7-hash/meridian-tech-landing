@@ -322,6 +322,16 @@ body.settled .wm-glow,body.settled .hero-b{
 }
 .btn:active{transform:translateY(1px);}
 .btn:hover{background:var(--blue);border-color:var(--blue);color:var(--white);}
+
+/* Enlace de contratación directa en cada plan. Deliberadamente secundario
+   frente a "Hablar de este plan": la venta consultiva convierte mejor, y este
+   camino es para quien ya decidió y solo quiere pagar. */
+.pl-pay{
+  display:block;text-align:center;margin-top:10px;padding:11px;
+  font-size:14px;font-weight:600;color:var(--mut);text-decoration:none;
+  border-radius:10px;border:1px solid transparent;transition:.18s ease;
+}
+.pl-pay:hover{color:var(--txt);border-color:var(--line-2);background:rgba(255,255,255,.03);}
 .btn-o{background:transparent;color:var(--txt);border-color:var(--line-2);}
 .btn-o:hover{background:var(--white);border-color:var(--white);color:var(--black);}
 .btn-xl{font-size:clamp(1rem,1.5vw,1.1875rem);padding:19px 34px;}
@@ -817,6 +827,7 @@ body.settled .wm-glow,body.settled .hero-b{
           <li><span>Tablets incluidas</span><b>1</b></li>
         </ul>
         <a class="btn btn-o" data-wa href="https://wa.me/573142162323?text=Hola%2C%20Meridian.%20Quiero%20conocer%20c%C3%B3mo%20pueden%20ayudarme%20a%20automatizar%20y%20transformar%20los%20procesos%20de%20mi%20empresa.%20Me%20gustar%C3%ADa%20recibir%20m%C3%A1s%20informaci%C3%B3n%20y%20agendar%20una%20conversaci%C3%B3n." target="_blank" rel="noopener noreferrer">Hablar de este plan</a>
+        <a class="pl-pay" href="/pagar/plan/1">Ya lo decidí, contratar y pagar &rarr;</a>
       </div>
 
       <div class="pl-c hi">
@@ -834,6 +845,7 @@ body.settled .wm-glow,body.settled .hero-b{
           <li><span>Tablets incluidas</span><b>1</b></li>
         </ul>
         <a class="btn" data-wa href="https://wa.me/573142162323?text=Hola%2C%20Meridian.%20Quiero%20conocer%20c%C3%B3mo%20pueden%20ayudarme%20a%20automatizar%20y%20transformar%20los%20procesos%20de%20mi%20empresa.%20Me%20gustar%C3%ADa%20recibir%20m%C3%A1s%20informaci%C3%B3n%20y%20agendar%20una%20conversaci%C3%B3n." target="_blank" rel="noopener noreferrer">Hablar de este plan</a>
+        <a class="pl-pay" href="/pagar/plan/2">Ya lo decidí, contratar y pagar &rarr;</a>
       </div>
 
       <div class="pl-c">
@@ -851,6 +863,7 @@ body.settled .wm-glow,body.settled .hero-b{
           <li><span>Tablets incluidas</span><b>2</b></li>
         </ul>
         <a class="btn btn-o" data-wa href="https://wa.me/573142162323?text=Hola%2C%20Meridian.%20Quiero%20conocer%20c%C3%B3mo%20pueden%20ayudarme%20a%20automatizar%20y%20transformar%20los%20procesos%20de%20mi%20empresa.%20Me%20gustar%C3%ADa%20recibir%20m%C3%A1s%20informaci%C3%B3n%20y%20agendar%20una%20conversaci%C3%B3n." target="_blank" rel="noopener noreferrer">Hablar de este plan</a>
+        <a class="pl-pay" href="/pagar/plan/3">Ya lo decidí, contratar y pagar &rarr;</a>
       </div>
 
     </div>

@@ -3,9 +3,116 @@ const Joi = require('joi');
 const { verifyToken } = require('../middleware/auth');
 const { dbGet, dbAll, dbRun } = require('../config/database');
 const boldService = require('../services/boldService');
+const metaSend = require('../services/metaSend');
+const { emitToClient } = require('./conversations');
 const logger = require('../utils/logger');
 
 const router = express.Router();
+
+/**
+ * Busca la conversación de WhatsApp desde la que se generó un cobro.
+ *
+ * El vínculo es el teléfono del cliente: cuando el cobro nace de un chat, el
+ * prospecto se registró con ese número (ver ventaService.asegurarCliente).
+ */
+const conversacionDelCliente = async (clientId) => {
+  const cliente = await dbGet('SELECT phone FROM clients WHERE id = ?', [clientId]);
+  if (!cliente?.phone) return null;
+  return await dbGet(
+    `SELECT * FROM conversations WHERE end_customer_id = ?
+     ORDER BY last_message_at DESC LIMIT 1`,
+    [cliente.phone]
+  );
+};
+
+/** Registra y emite un mensaje del bot en una conversación. */
+const registrarMensajeBot = async (conversacion, texto, externalId, entregado) => {
+  const guardado = await dbRun(
+    'INSERT INTO messages (conversation_id, sender_type, content, external_message_id) VALUES (?, ?, ?, ?)',
+    [conversacion.id, 'bot', texto, externalId || null]
+  );
+  await dbRun('UPDATE conversations SET last_message_at = CURRENT_TIMESTAMP WHERE id = ?', [conversacion.id]);
+  emitToClient(conversacion.client_id, 'conversation:new_message', {
+    id: guardado.id, conversation_id: conversacion.id, sender_type: 'bot',
+    content: texto, delivered: entregado, created_at: new Date().toISOString()
+  });
+};
+
+/**
+ * Confirma el pago por el mismo chat donde se pidió.
+ *
+ * Nunca lanza: si falla la notificación, el pago YA está registrado y la
+ * suscripción activa. Perder el aviso es molesto; perder el pago sería grave.
+ */
+async function confirmarPagoAlCliente(transaction, plan) {
+  try {
+    const conversacion = await conversacionDelCliente(transaction.client_id);
+    if (!conversacion) return;
+
+    const monto = '$' + Number(transaction.amount).toLocaleString('es-CO');
+    const texto =
+      `¡Listo! Recibimos tu pago de ${monto} COP por el plan ${plan?.name || ''}. ✅\n\n` +
+      `Ya quedaste activo. En las próximas horas te contacta alguien del equipo ` +
+      `para coordinar la instalación y dejarte todo funcionando.`;
+
+    const envio = await metaSend.sendText({
+      channelType: conversacion.channel_type,
+      to: conversacion.end_customer_id,
+      text: texto
+    });
+    await registrarMensajeBot(conversacion, texto, envio.externalId, envio.sent);
+
+    // El dueño necesita saber que entró plata y que hay que instalar
+    emitToClient(conversacion.client_id, 'payment:completed', {
+      conversationId: conversacion.id,
+      orderId: transaction.bold_transaction_id,
+      monto: transaction.amount,
+      plan: plan?.name
+    });
+
+    logger.info('Pago confirmado al cliente por su chat', {
+      conversationId: conversacion.id, orderId: transaction.bold_transaction_id
+    });
+  } catch (error) {
+    logger.error('No se pudo confirmar el pago al cliente', {
+      transactionId: transaction.id, error: error.message
+    });
+  }
+}
+
+/**
+ * Avisa que el pago fue rechazado, con el enlace para reintentar.
+ *
+ * Sin este aviso el cliente cree que quedó pagado y aparece el lunes esperando
+ * la instalación. Es mejor decirlo de una y darle cómo reintentar.
+ */
+async function avisarPagoRechazado(transaction) {
+  try {
+    const conversacion = await conversacionDelCliente(transaction.client_id);
+    if (!conversacion) return;
+
+    const appUrl = (process.env.APP_URL || 'https://meridiantech.app').replace(/\/$/, '');
+    const texto =
+      `El pago no se pudo procesar. Puede ser un tema del banco o de la tarjeta.\n\n` +
+      `Puedes intentar de nuevo acá: ${appUrl}/pagar/${transaction.bold_transaction_id}\n\n` +
+      `Si sigue fallando dime y lo resolvemos por otro medio.`;
+
+    const envio = await metaSend.sendText({
+      channelType: conversacion.channel_type,
+      to: conversacion.end_customer_id,
+      text: texto
+    });
+    await registrarMensajeBot(conversacion, texto, envio.externalId, envio.sent);
+
+    logger.info('Aviso de pago rechazado enviado', {
+      conversationId: conversacion.id, orderId: transaction.bold_transaction_id
+    });
+  } catch (error) {
+    logger.error('No se pudo avisar el rechazo del pago', {
+      transactionId: transaction.id, error: error.message
+    });
+  }
+}
 
 const createPaymentSchema = Joi.object({
   client_id: Joi.number().integer().required(),
@@ -194,6 +301,14 @@ router.post('/webhook/bold', async (req, res, next) => {
         transactionId: transaction.id,
         clientId: transaction.client_id
       });
+
+      // Cerrar el círculo con quien pagó: si el cobro salió de una conversación
+      // de WhatsApp, ahí mismo se confirma. Sin esto el cliente paga y queda en
+      // el aire preguntándose si llegó — que es justo cuando escribe "ya pagué,
+      // me confirmas?" y alguien tiene que atenderlo a mano.
+      await confirmarPagoAlCliente(transaction, plan);
+    } else if (newStatus === 'failed') {
+      await avisarPagoRechazado(transaction);
     }
 
     res.json({ success: true, received: true });

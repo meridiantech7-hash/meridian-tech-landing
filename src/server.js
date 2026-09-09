@@ -22,6 +22,7 @@ const paymentsRoutes = require('./routes/payments');
 const { router: conversationsRoutes, setIO } = require('./routes/conversations');
 const botConfigRoutes = require('./routes/botConfig');
 const { router: ordersRoutes } = require('./routes/orders');
+const checkoutRoutes = require('./routes/checkout');
 const metaWebhookRoutes = require('./routes/metaWebhook');
 
 const app = express();
@@ -50,15 +51,20 @@ app.use(helmet({
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
-      scriptSrc: ["'self'", "'unsafe-inline'"],
+      // checkout.bold.co es la pasarela de pagos: su script dibuja el botón y
+      // abre el checkout. Sin estos permisos la página de pago carga en blanco
+      // y no se puede cobrar — y el navegador no muestra ningún error visible.
+      scriptSrc: ["'self'", "'unsafe-inline'", 'https://checkout.bold.co'],
       scriptSrcAttr: ["'unsafe-inline'"],
-      styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
-      fontSrc: ["'self'", 'https://fonts.gstatic.com', 'data:'],
-      imgSrc: ["'self'", 'data:'],
-      connectSrc: ["'self'", 'wss:', 'ws:'],
+      styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com', 'https://checkout.bold.co'],
+      fontSrc: ["'self'", 'https://fonts.gstatic.com', 'https://checkout.bold.co', 'data:'],
+      imgSrc: ["'self'", 'data:', 'https://checkout.bold.co', 'https://*.bold.co'],
+      connectSrc: ["'self'", 'wss:', 'ws:', 'https://checkout.bold.co', 'https://*.bold.co'],
+      // El checkout de Bold se abre en un iframe dentro de nuestra página
+      frameSrc: ["'self'", 'https://checkout.bold.co', 'https://*.bold.co'],
       frameAncestors: ["'self'"],
       baseUri: ["'self'"],
-      formAction: ["'self'"],
+      formAction: ["'self'", 'https://checkout.bold.co', 'https://*.bold.co'],
       objectSrc: ["'none'"]
     }
   }
@@ -168,6 +174,11 @@ app.get('/admin', (req, res) => {
 app.get('/tablet', (req, res) => {
   res.sendFile(path.join(__dirname, '../public/tablet.html'));
 });
+
+// Página de pago por orden. Va fuera de /api porque es una página que abre una
+// persona en su navegador, y su URL es lo que viaja por WhatsApp: conviene que
+// sea corta y legible (meridiantech.app/pagar/MER-1-2-...).
+app.use('/pagar', checkoutRoutes);
 
 // Páginas legales. Meta EXIGE la de privacidad para poder publicar la app, y
 // además lee el HTML crudo, así que se sirven desde el servidor y no se generan

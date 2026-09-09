@@ -5,6 +5,7 @@ const geminiService = require('../services/geminiService');
 const metaSend = require('../services/metaSend');
 const { emitToClient } = require('./conversations');
 const { createOrder } = require('./orders');
+const ventaService = require('../services/ventaService');
 const logger = require('../utils/logger');
 
 const router = express.Router();
@@ -185,6 +186,22 @@ async function processMessage(clientId, msg) {
     [conversation.id]
   );
 
+  // ¿El cliente está pidiendo pagar? Se revisa ANTES de llamar al modelo, por
+  // dos razones: no gasta tokens, y sobre todo el mensaje de cobro lo armamos
+  // nosotros con el monto exacto en vez de confiar en que el modelo no se
+  // equivoque con una cifra. El asistente tiene prohibido ofrecer el pago; este
+  // camino solo se abre cuando el cliente lo pide con sus palabras.
+  const fraseDePago = ventaService.pidePagar(msg.text);
+  if (fraseDePago) {
+    logger.info('El cliente pidió pagar', {
+      conversationId: conversation.id, frase: fraseDePago
+    });
+    const cobrado = await enviarCobro(clientId, conversation, msg);
+    if (cobrado) return;
+    // Si no se pudo determinar el plan, se sigue al flujo normal: el asistente
+    // preguntará cuál plan quiere, que es lo correcto en vez de adivinar.
+  }
+
   // Adjuntos: WhatsApp entrega un media id que hay que resolver contra la Graph
   // API; IG/Messenger entregan una URL firmada directamente en el webhook.
   // Se bajan aquí y se pasan a Gemini como bytes, que es lo que le permite
@@ -325,6 +342,71 @@ async function processMessage(clientId, msg) {
   // Va al final y sin await del cliente final a propósito: si esto falla o
   // tarda, el cliente ya recibió su respuesta.
   await syncOrderFromConversation(clientId, conversation, history, incoming, msg);
+}
+
+/**
+ * Genera y envía el cobro cuando el cliente lo pidió.
+ *
+ * El mensaje lo redactamos nosotros y no el modelo: la cifra y el enlace tienen
+ * que ser exactos. Se manda el enlace y detrás el QR, porque hay gente que
+ * desconfía de un link por WhatsApp pero sí escanea un código.
+ *
+ * @returns {boolean} true si se cobró; false si hay que seguir conversando
+ */
+async function enviarCobro(clientId, conversation, msg) {
+  const cobro = await ventaService.generarCobro(conversation);
+
+  if (!cobro.ok) {
+    logger.info('No se generó cobro, sigue la conversación', { motivo: cobro.motivo });
+    return false;
+  }
+
+  const monto = '$' + Number(cobro.monto).toLocaleString('es-CO');
+  const texto =
+    `Perfecto. Te dejo el pago del plan ${cobro.plan.name} por ${monto} COP mensuales.\n\n` +
+    `${cobro.enlace}\n\n` +
+    `Puedes pagar con tarjeta, PSE o Nequi. Cuando lo hagas me llega la confirmación ` +
+    `y te contacto para coordinar la instalación.`;
+
+  const envio = await metaSend.sendText({
+    channelType: msg.channel_type,
+    to: msg.end_customer_id,
+    text: texto,
+    phoneNumberId: msg.phone_number_id
+  });
+
+  const guardado = await dbRun(
+    'INSERT INTO messages (conversation_id, sender_type, content, external_message_id) VALUES (?, ?, ?, ?)',
+    [conversation.id, 'bot', texto, envio.externalId || null]
+  );
+  await dbRun('UPDATE conversations SET last_message_at = CURRENT_TIMESTAMP WHERE id = ?', [conversation.id]);
+
+  emitToClient(clientId, 'conversation:new_message', {
+    id: guardado.id, conversation_id: conversation.id, sender_type: 'bot',
+    content: texto, delivered: envio.sent, created_at: new Date().toISOString()
+  });
+
+  // El QR va aparte y no bloquea: si falla, el enlace ya salió y la venta sigue viva.
+  metaSend.sendImage({
+    channelType: msg.channel_type,
+    to: msg.end_customer_id,
+    imageUrl: cobro.enlaceQr,
+    caption: 'O escanea este código si prefieres',
+    phoneNumberId: msg.phone_number_id
+  }).catch(() => {});
+
+  emitToClient(clientId, 'conversation:payment_sent', {
+    conversationId: conversation.id,
+    orderId: cobro.orderId,
+    plan: cobro.plan.name,
+    monto: cobro.monto
+  });
+
+  logger.info('Cobro enviado al cliente', {
+    conversationId: conversation.id, orderId: cobro.orderId,
+    plan: cobro.plan.name, entregado: envio.sent
+  });
+  return true;
 }
 
 /**

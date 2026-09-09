@@ -111,6 +111,54 @@ const sendText = async ({ channelType, to, text, phoneNumberId }) => {
 };
 
 /**
+ * Envía una imagen por su URL pública (no hay que subirla a Meta primero).
+ *
+ * Se usa para el QR del cobro: hay clientes que prefieren escanear antes que
+ * abrir un enlace, sobre todo si desconfían de links por WhatsApp — que es
+ * precisamente el problema que estamos resolviendo.
+ */
+const sendImage = async ({ channelType, to, imageUrl, caption, phoneNumberId }) => {
+  if (!isConfigured()) {
+    return { sent: false, error: { reason: 'META_ACCESS_TOKEN no configurado' } };
+  }
+  if (!imageUrl) return { sent: false, error: { reason: 'sin URL de imagen' } };
+
+  try {
+    let url;
+    let payload;
+
+    if (channelType === 'whatsapp') {
+      const numberId = phoneNumberId || PHONE_NUMBER_ID;
+      if (!numberId) return { sent: false, error: { reason: 'META_PHONE_NUMBER_ID no configurado' } };
+      url = `${GRAPH}/${numberId}/messages`;
+      payload = {
+        messaging_product: 'whatsapp',
+        recipient_type: 'individual',
+        to,
+        type: 'image',
+        image: { link: imageUrl, caption: caption || undefined }
+      };
+    } else {
+      url = `${GRAPH}/${PAGE_ID}/messages`;
+      payload = {
+        recipient: { id: to },
+        message: { attachment: { type: 'image', payload: { url: imageUrl, is_reusable: false } } },
+        messaging_type: 'RESPONSE'
+      };
+    }
+
+    const response = await axios.post(url, payload, { headers: auth(), timeout: 20000 });
+    const externalId = response.data?.messages?.[0]?.id || response.data?.message_id || null;
+    logger.info('Imagen despachada a Meta', { channelType, to, externalId });
+    return { sent: true, externalId };
+  } catch (error) {
+    const detail = describeError(error);
+    logger.error('Error despachando imagen a Meta', { channelType, to, ...detail });
+    return { sent: false, error: detail };
+  }
+};
+
+/**
  * Marca el mensaje entrante como leído (solo WhatsApp lo soporta).
  * Es cosmético pero cambia la percepción: el cliente ve que su mensaje llegó
  * aunque el dueño haya tomado el control y tarde en contestar.
@@ -191,6 +239,7 @@ const downloadFromUrl = async (mediaUrl) => {
 module.exports = {
   isConfigured,
   sendText,
+  sendImage,
   markAsRead,
   downloadWhatsAppMedia,
   downloadFromUrl,
