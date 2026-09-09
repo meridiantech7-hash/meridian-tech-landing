@@ -29,6 +29,18 @@ const configSchema = Joi.object({
  * Nunca devuelve la llave: solo el tiempo, el resultado y el tamaño del
  * conocimiento cargado.
  */
+router.get('/modelos', verifyToken, async (req, res, next) => {
+  try {
+    res.json({ success: true, data: await geminiService.listarModelos() });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * Prueba un modelo concreto: /diagnostico?modelo=gemini-flash-latest
+ * Sirve para encontrar cuál responde rápido cuando el de siempre se satura.
+ */
 router.get('/:clientId/diagnostico', verifyToken, async (req, res, next) => {
   try {
     const config = await geminiService.getBotConfig(req.params.clientId);
@@ -37,7 +49,8 @@ router.get('/:clientId/diagnostico', verifyToken, async (req, res, next) => {
     const { handoff, reply } = await geminiService.generateBotResponse(
       req.params.clientId,
       [],
-      { text: 'Responde solamente con la palabra: listo' }
+      { text: 'Responde solamente con la palabra: listo' },
+      req.query.modelo || null
     );
 
     const ms = Date.now() - inicio;

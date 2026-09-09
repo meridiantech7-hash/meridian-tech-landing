@@ -189,7 +189,28 @@ const buildContents = (history, newMessagePart) => {
  *   handoff: motivo de derivación si aplica (y reply será null)
  *   reply: texto de respuesta del bot si no hubo derivación
  */
-const generateBotResponse = async (clientId, conversationHistory, incoming) => {
+/**
+ * Lista los modelos que la llave puede usar, con su ventana de contexto.
+ * Sirve para elegir a cuál cambiarse cuando el de siempre se satura, en vez de
+ * adivinar nombres.
+ */
+const listarModelos = async () => {
+  if (!isConfigured()) return { configurada: false, modelos: [] };
+  const { data } = await axios.get(
+    `${GEMINI_API_URL}?key=${GEMINI_API_KEY}&pageSize=100`,
+    { timeout: 15000 }
+  );
+  const modelos = (data.models || [])
+    .filter((m) => (m.supportedGenerationMethods || []).includes('generateContent'))
+    .map((m) => ({
+      nombre: m.name.replace('models/', ''),
+      entrada: m.inputTokenLimit,
+      salida: m.outputTokenLimit
+    }));
+  return { configurada: true, total: modelos.length, modelos };
+};
+
+const generateBotResponse = async (clientId, conversationHistory, incoming, modeloForzado = null) => {
   const config = await getBotConfig(clientId);
 
   // 1. Derivación por palabra clave (no gasta tokens de IA si ya sabemos que hay que derivar)
@@ -225,7 +246,7 @@ const generateBotResponse = async (clientId, conversationHistory, incoming) => {
   const systemInstruction = { parts: [{ text: buildSystemInstruction(config) }] };
 
   try {
-    const model = config.ai_model || DEFAULT_MODEL;
+    const model = modeloForzado || config.ai_model || DEFAULT_MODEL;
     const url = `${GEMINI_API_URL}/${model}:generateContent?key=${GEMINI_API_KEY}`;
 
     const response = await llamarGemini(url, {
@@ -391,5 +412,6 @@ module.exports = {
   extractOrder,
   getBotConfig,
   upsertBotConfig,
-  detectHandoffKeyword
+  detectHandoffKeyword,
+  listarModelos
 };
