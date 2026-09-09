@@ -228,15 +228,45 @@ async function processMessage(clientId, msg) {
   );
 
   if (handoff) {
-    await dbRun('UPDATE conversations SET mode = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', ['human', conversation.id]);
+    // Se distingue POR QUÉ se deriva, y no es un detalle menor.
+    //
+    // Si el cliente pidió hablar con una persona, la conversación pasa a modo
+    // humano y ahí se queda hasta que alguien la devuelva: eso es lo correcto.
+    //
+    // Pero si la IA simplemente falló (Google caído, saturado, sin respuesta),
+    // dejarla en modo humano la silencia PARA SIEMPRE. Pasó en producción: una
+    // falla pasajera de Gemini dejó la conversación muda, el cliente siguió
+    // escribiendo y el bot no volvió a contestar nunca — parecía que el sistema
+    // estaba roto cuando en realidad estaba obedeciendo. Un problema técnico
+    // pasajero no puede tener consecuencias permanentes: se avisa al dueño,
+    // pero el bot sigue habilitado para intentarlo en el próximo mensaje.
+    const fueFallaTecnica = /error de IA|sin respuesta del modelo/i.test(handoff);
+
+    if (!fueFallaTecnica) {
+      await dbRun('UPDATE conversations SET mode = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', ['human', conversation.id]);
+      emitToClient(clientId, 'conversation:mode_changed', { conversationId: conversation.id, mode: 'human', reason: handoff });
+    } else {
+      emitToClient(clientId, 'conversation:ai_failed', {
+        conversationId: conversation.id, reason: handoff
+      });
+    }
+
     await dbRun('INSERT INTO handoff_events (conversation_id, trigger_type, detail) VALUES (?, ?, ?)',
-      [conversation.id, 'auto', handoff]);
-    emitToClient(clientId, 'conversation:mode_changed', { conversationId: conversation.id, mode: 'human', reason: handoff });
-    logger.info('Derivación automática a humano desde webhook de Meta', { conversationId: conversation.id, reason: handoff });
+      [conversation.id, fueFallaTecnica ? 'ai_error' : 'auto', handoff]);
+
+    logger.info('Derivación desde webhook de Meta', {
+      conversationId: conversation.id, reason: handoff,
+      modo: fueFallaTecnica ? 'sigue en bot (falla técnica)' : 'pasa a humano'
+    });
 
     // Se avisa al cliente final para que no quede en silencio esperando: sin
     // esto la derivación se siente como que el negocio dejó de responder.
-    const aviso = 'Con gusto te comunico con una persona del equipo. En un momento te responden por acá. 🙌';
+    // El mensaje también cambia según el motivo: prometerle al cliente que "ya
+    // le comunico con una persona" cuando en realidad se cayó Google es
+    // mentirle, y además nadie lo va a atender.
+    const aviso = fueFallaTecnica
+      ? 'Disculpa, tuve un problema para procesar tu mensaje. ¿Me lo puedes repetir?'
+      : 'Con gusto te comunico con una persona del equipo. En un momento te responden por acá. 🙌';
     const notice = await metaSend.sendText({
       channelType: msg.channel_type,
       to: msg.end_customer_id,
