@@ -25,7 +25,11 @@ const router = express.Router();
  */
 
 const VERIFY_TOKEN = process.env.META_VERIFY_TOKEN;
-const APP_SECRET = process.env.META_APP_SECRET;
+// `.trim()` no es cosmético: al pegar la clave en el panel de Railway es fácil
+// arrastrar un espacio o un salto de línea invisible, y un solo byte de más
+// cambia por completo el HMAC. El síntoma es brutal — Meta entrega los mensajes
+// y el servidor los rechaza todos con 401 — y la causa es invisible.
+const APP_SECRET = (process.env.META_APP_SECRET || '').trim();
 
 // ── Verificación del webhook (GET) ──────────────────────────────────────────
 router.get('/', (req, res) => {
@@ -53,18 +57,39 @@ const isValidSignature = (req) => {
     return true;
   }
   const signature = req.get('x-hub-signature-256');
-  if (!signature || !req.rawBody) return false;
+  if (!signature || !req.rawBody) {
+    logger.warn('Webhook sin firma o sin cuerpo crudo', {
+      tieneFirma: !!signature, tieneCuerpo: !!req.rawBody
+    });
+    return false;
+  }
 
   const expected = 'sha256=' + crypto
     .createHmac('sha256', APP_SECRET)
     .update(req.rawBody)
     .digest('hex');
 
+  let coincide = false;
   try {
-    return crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected));
+    coincide = crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected));
   } catch (e) {
-    return false;
+    coincide = false;
   }
+
+  // Diagnóstico cuando NO coincide. Las firmas no son secretas (una viaja en la
+  // cabecera y la otra se deriva de ella), así que se pueden registrar; la clave
+  // nunca. Comparar ambas distingue "la clave está mal" de "el cuerpo llegó
+  // alterado", que se arreglan de formas muy distintas.
+  if (!coincide) {
+    logger.warn('Firma HMAC no coincide', {
+      recibida: signature,
+      calculada: expected,
+      bytesCuerpo: req.rawBody.length,
+      largoClave: APP_SECRET.length
+    });
+  }
+
+  return coincide;
 };
 
 // ── Normalizadores de payload ───────────────────────────────────────────────
