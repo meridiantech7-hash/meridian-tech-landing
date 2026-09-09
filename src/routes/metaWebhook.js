@@ -2,6 +2,7 @@ const express = require('express');
 const crypto = require('crypto');
 const { dbGet, dbAll, dbRun } = require('../config/database');
 const geminiService = require('../services/geminiService');
+const metaSend = require('../services/metaSend');
 const { emitToClient } = require('./conversations');
 const logger = require('../utils/logger');
 
@@ -71,6 +72,12 @@ const isValidSignature = (req) => {
 const parseWhatsApp = (value) => {
   const out = [];
   const contacts = value.contacts || [];
+  // El phone_number_id viene en cada evento. Se conserva porque es la clave que
+  // identifica QUÉ número recibió el mensaje: cuando haya varios negocios
+  // (capa A), es lo que permite responder por la línea correcta y no por la
+  // de otro cliente.
+  const phoneNumberId = value.metadata?.phone_number_id || null;
+
   (value.messages || []).forEach((m) => {
     const contact = contacts.find(c => c.wa_id === m.from);
     out.push({
@@ -80,7 +87,8 @@ const parseWhatsApp = (value) => {
       text: m.text?.body || m.button?.text || m.interactive?.list_reply?.title || null,
       mediaId: m.image?.id || m.audio?.id || m.voice?.id || null,
       mediaType: m.image ? 'image' : (m.audio || m.voice) ? 'audio' : null,
-      external_message_id: m.id
+      external_message_id: m.id,
+      phone_number_id: phoneNumberId
     });
   });
   return out;
@@ -134,6 +142,12 @@ async function processMessage(clientId, msg) {
     conversation_id: conversation.id, sender_type: 'end_customer', content: shownText, created_at: new Date().toISOString()
   });
 
+  // Acuse de lectura: se manda incluso si el dueño tomó el control, porque el
+  // cliente merece ver que su mensaje llegó aunque la respuesta tarde.
+  if (msg.channel_type === 'whatsapp' && msg.external_message_id) {
+    metaSend.markAsRead(msg.external_message_id, msg.phone_number_id).catch(() => {});
+  }
+
   // Si el dueño tomó el control, el bot no responde
   if (conversation.mode !== 'bot') {
     logger.info('Mensaje recibido con bot inactivo', { conversationId: conversation.id, mode: conversation.mode });
@@ -145,14 +159,46 @@ async function processMessage(clientId, msg) {
     [conversation.id]
   );
 
-  // NOTA: para imagen/audio, Meta entrega un media id (WhatsApp) o una URL
-  // temporal (IG/Messenger). Descargarlos y pasarlos a Gemini requiere el
-  // token de acceso permanente (META_ACCESS_TOKEN) — pendiente de configurar.
-  // Hasta entonces, el bot recibe solo el texto y el marcador del adjunto.
+  // Adjuntos: WhatsApp entrega un media id que hay que resolver contra la Graph
+  // API; IG/Messenger entregan una URL firmada directamente en el webhook.
+  // Se bajan aquí y se pasan a Gemini como bytes, que es lo que le permite
+  // *oír* el audio y *ver* la imagen en vez de recibir solo un marcador.
+  const incoming = { text: msg.text || null };
+
+  if (msg.mediaType) {
+    const media = msg.mediaId
+      ? await metaSend.downloadWhatsAppMedia(msg.mediaId)
+      : await metaSend.downloadFromUrl(msg.mediaUrl);
+
+    if (media) {
+      if (msg.mediaType === 'image') {
+        incoming.imageBase64 = media.base64;
+        incoming.imageMimeType = media.mimeType;
+      } else {
+        incoming.audioBase64 = media.base64;
+        incoming.audioMimeType = media.mimeType;
+      }
+      logger.info('Adjunto descargado para el motor de IA', {
+        conversationId: conversation.id, tipo: msg.mediaType, mime: media.mimeType
+      });
+    } else {
+      // No se pudo bajar (token ausente, adjunto vencido o muy grande): el bot
+      // sigue el flujo con el marcador de texto en vez de quedarse mudo.
+      incoming.text = incoming.text || shownText;
+      logger.warn('Adjunto no descargado, el bot responde solo con el texto', {
+        conversationId: conversation.id, tipo: msg.mediaType
+      });
+    }
+  }
+
+  if (!incoming.text && !incoming.imageBase64 && !incoming.audioBase64) {
+    incoming.text = shownText;
+  }
+
   const { handoff, reply } = await geminiService.generateBotResponse(
     clientId,
     history.slice(0, -1),
-    { text: shownText }
+    incoming
   );
 
   if (handoff) {
@@ -161,19 +207,63 @@ async function processMessage(clientId, msg) {
       [conversation.id, 'auto', handoff]);
     emitToClient(clientId, 'conversation:mode_changed', { conversationId: conversation.id, mode: 'human', reason: handoff });
     logger.info('Derivación automática a humano desde webhook de Meta', { conversationId: conversation.id, reason: handoff });
+
+    // Se avisa al cliente final para que no quede en silencio esperando: sin
+    // esto la derivación se siente como que el negocio dejó de responder.
+    const aviso = 'Con gusto te comunico con una persona del equipo. En un momento te responden por acá. 🙌';
+    const notice = await metaSend.sendText({
+      channelType: msg.channel_type,
+      to: msg.end_customer_id,
+      text: aviso,
+      phoneNumberId: msg.phone_number_id
+    });
+    if (notice.sent) {
+      const noticeMsg = await dbRun(
+        'INSERT INTO messages (conversation_id, sender_type, content, external_message_id) VALUES (?, ?, ?, ?)',
+        [conversation.id, 'bot', aviso, notice.externalId || null]
+      );
+      emitToClient(clientId, 'conversation:new_message', {
+        id: noticeMsg.id, conversation_id: conversation.id, sender_type: 'bot',
+        content: aviso, created_at: new Date().toISOString()
+      });
+    }
     return;
   }
 
-  const botMsg = await dbRun('INSERT INTO messages (conversation_id, sender_type, content) VALUES (?, ?, ?)',
-    [conversation.id, 'bot', reply]);
-  emitToClient(clientId, 'conversation:new_message', {
-    id: botMsg.id, conversation_id: conversation.id, sender_type: 'bot', content: reply, created_at: new Date().toISOString()
+  // Se despacha ANTES de dar por buena la respuesta, para que el estado real
+  // de entrega quede guardado junto al mensaje y visible en la bandeja.
+  const dispatch = await metaSend.sendText({
+    channelType: msg.channel_type,
+    to: msg.end_customer_id,
+    text: reply,
+    phoneNumberId: msg.phone_number_id
   });
 
-  // NOTA: el envío de `reply` de vuelta al cliente final (Cloud API / Send API)
-  // requiere META_ACCESS_TOKEN + phone_number_id. Queda registrado y visible en
-  // la bandeja en vivo; el despacho real se activa al configurar ese token.
-  logger.info('Respuesta del bot generada desde webhook de Meta', { conversationId: conversation.id, canal: msg.channel_type });
+  const botMsg = await dbRun(
+    'INSERT INTO messages (conversation_id, sender_type, content, external_message_id) VALUES (?, ?, ?, ?)',
+    [conversation.id, 'bot', reply, dispatch.externalId || null]
+  );
+  await dbRun('UPDATE conversations SET last_message_at = CURRENT_TIMESTAMP WHERE id = ?', [conversation.id]);
+
+  emitToClient(clientId, 'conversation:new_message', {
+    id: botMsg.id, conversation_id: conversation.id, sender_type: 'bot', content: reply,
+    delivered: dispatch.sent, created_at: new Date().toISOString()
+  });
+
+  if (!dispatch.sent) {
+    // El dueño tiene que enterarse de que ese mensaje NO llegó, sobre todo si
+    // fue por la ventana de 24h — ahí hace falta que él escriba primero.
+    emitToClient(clientId, 'conversation:delivery_failed', {
+      conversationId: conversation.id,
+      messageId: botMsg.id,
+      reason: dispatch.error?.reason,
+      outsideWindow: !!dispatch.error?.outsideWindow
+    });
+  }
+
+  logger.info('Respuesta del bot generada y despachada', {
+    conversationId: conversation.id, canal: msg.channel_type, entregado: dispatch.sent
+  });
 }
 
 // ── Recepción de eventos (POST) ─────────────────────────────────────────────

@@ -3,6 +3,7 @@ const Joi = require('joi');
 const { verifyToken } = require('../middleware/auth');
 const { dbGet, dbAll, dbRun } = require('../config/database');
 const geminiService = require('../services/geminiService');
+const metaSend = require('../services/metaSend');
 const logger = require('../utils/logger');
 
 const router = express.Router();
@@ -111,9 +112,10 @@ router.post('/:id/resume', verifyToken, async (req, res, next) => {
   }
 });
 
-// POST /api/conversations/:id/messages - El dueño envía un mensaje como humano
-// (el envío real por WhatsApp/IG/Messenger lo hace el conector del proveedor,
-//  aquí solo se registra y se emite en vivo; el conector lo consume vía evento)
+// POST /api/conversations/:id/messages - El dueño envía un mensaje como humano.
+// Se despacha por el mismo canal y el mismo número del negocio, así que para el
+// cliente final es indistinguible del bot: no ve dos líneas ni sabe que hubo
+// un cambio de manos.
 const sendMessageSchema = Joi.object({ content: Joi.string().min(1).required() });
 
 router.post('/:id/messages', verifyToken, async (req, res, next) => {
@@ -129,9 +131,15 @@ router.post('/:id/messages', verifyToken, async (req, res, next) => {
       return res.status(404).json({ error: 'Conversación no encontrada' });
     }
 
+    const dispatch = await metaSend.sendText({
+      channelType: conversation.channel_type,
+      to: conversation.end_customer_id,
+      text: value.content
+    });
+
     const result = await dbRun(
-      'INSERT INTO messages (conversation_id, sender_type, content) VALUES (?, ?, ?)',
-      [conversation.id, 'owner', value.content]
+      'INSERT INTO messages (conversation_id, sender_type, content, external_message_id) VALUES (?, ?, ?, ?)',
+      [conversation.id, 'owner', value.content, dispatch.externalId || null]
     );
 
     await dbRun(
@@ -139,10 +147,28 @@ router.post('/:id/messages', verifyToken, async (req, res, next) => {
       [conversation.id]
     );
 
-    const message = { id: result.id, conversation_id: conversation.id, sender_type: 'owner', content: value.content, created_at: new Date().toISOString() };
+    const message = {
+      id: result.id, conversation_id: conversation.id, sender_type: 'owner',
+      content: value.content, delivered: dispatch.sent, created_at: new Date().toISOString()
+    };
 
-    logger.info('Mensaje enviado por el dueño', { conversationId: conversation.id, userId: req.user.id });
+    logger.info('Mensaje enviado por el dueño', {
+      conversationId: conversation.id, userId: req.user.id, entregado: dispatch.sent
+    });
     emitToClient(conversation.client_id, 'conversation:new_message', message);
+
+    // Si no salió, se responde 202: quedó guardado y visible, pero el dueño
+    // tiene que saber que el cliente NO lo recibió (lo más probable: pasaron
+    // más de 24h desde el último mensaje del cliente y WhatsApp exige plantilla).
+    if (!dispatch.sent) {
+      return res.status(202).json({
+        success: true,
+        data: message,
+        warning: dispatch.error?.outsideWindow
+          ? 'Guardado, pero NO entregado: pasaron más de 24 horas desde el último mensaje del cliente. WhatsApp solo permite plantillas aprobadas fuera de esa ventana.'
+          : `Guardado, pero NO entregado: ${dispatch.error?.reason || 'error de envío'}`
+      });
+    }
 
     res.status(201).json({ success: true, data: message });
   } catch (error) {
@@ -240,16 +266,28 @@ router.post('/incoming', async (req, res, next) => {
       return res.json({ success: true, data: { conversationId: conversation.id, botResponded: false, handoff } });
     }
 
-    // 5. Guardar y emitir la respuesta del bot
-    const botMsg = await dbRun('INSERT INTO messages (conversation_id, sender_type, content) VALUES (?, ?, ?)', [conversation.id, 'bot', reply]);
+    // 5. Despachar, guardar y emitir la respuesta del bot
+    const dispatch = await metaSend.sendText({
+      channelType: conversation.channel_type,
+      to: conversation.end_customer_id,
+      text: reply
+    });
+
+    const botMsg = await dbRun(
+      'INSERT INTO messages (conversation_id, sender_type, content, external_message_id) VALUES (?, ?, ?, ?)',
+      [conversation.id, 'bot', reply, dispatch.externalId || null]
+    );
     await dbRun('UPDATE conversations SET last_message_at = CURRENT_TIMESTAMP WHERE id = ?', [conversation.id]);
-    const botMessage = { id: botMsg.id, conversation_id: conversation.id, sender_type: 'bot', content: reply, created_at: new Date().toISOString() };
+    const botMessage = {
+      id: botMsg.id, conversation_id: conversation.id, sender_type: 'bot',
+      content: reply, delivered: dispatch.sent, created_at: new Date().toISOString()
+    };
     emitToClient(conversation.client_id, 'conversation:new_message', botMessage);
 
-    // Nota: enviar `reply` de vuelta al cliente final por WhatsApp/IG/Messenger
-    // es responsabilidad del conector del proveedor (aún por conectar), que
-    // debe leer esta respuesta y despacharla por el canal correspondiente.
-    res.json({ success: true, data: { conversationId: conversation.id, botResponded: true, reply } });
+    res.json({
+      success: true,
+      data: { conversationId: conversation.id, botResponded: true, reply, delivered: dispatch.sent }
+    });
   } catch (error) {
     next(error);
   }
