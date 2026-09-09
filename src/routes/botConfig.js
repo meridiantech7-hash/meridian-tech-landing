@@ -17,6 +17,49 @@ const configSchema = Joi.object({
   max_failed_attempts: Joi.number().integer().min(1).max(10)
 });
 
+/**
+ * GET /api/bot-config/:clientId/diagnostico
+ *
+ * Mide cuánto tarda Gemini en responder, desde el mismo servidor que atiende a
+ * los clientes. Existe porque en producción el bot empezó a agotar el tiempo de
+ * espera y desde afuera no hay forma de distinguir tres causas muy distintas:
+ * que Google esté lento, que la llave esté mal, o que el prompt del negocio se
+ * haya vuelto tan grande que la petición sea pesada.
+ *
+ * Nunca devuelve la llave: solo el tiempo, el resultado y el tamaño del
+ * conocimiento cargado.
+ */
+router.get('/:clientId/diagnostico', verifyToken, async (req, res, next) => {
+  try {
+    const config = await geminiService.getBotConfig(req.params.clientId);
+    const inicio = Date.now();
+
+    const { handoff, reply } = await geminiService.generateBotResponse(
+      req.params.clientId,
+      [],
+      { text: 'Responde solamente con la palabra: listo' }
+    );
+
+    const ms = Date.now() - inicio;
+    res.json({
+      success: true,
+      data: {
+        configurada: geminiService.isConfigured(),
+        modelo: config.ai_model,
+        milisegundos: ms,
+        segundos: +(ms / 1000).toFixed(1),
+        respondio: !handoff,
+        motivo_derivacion: handoff || null,
+        respuesta: reply ? reply.slice(0, 120) : null,
+        tamano_conocimiento: (config.knowledge_base || '').length,
+        tamano_prompt: (config.system_prompt || '').length
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 // GET /api/bot-config/:clientId - Ver configuración del nodo de IA de un cliente
 router.get('/:clientId', verifyToken, async (req, res, next) => {
   try {

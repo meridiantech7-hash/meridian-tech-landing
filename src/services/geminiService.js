@@ -39,6 +39,39 @@ const esFalloPasajero = (error) => {
 const esperar = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /**
+ * Configuración de generación para atención al cliente.
+ *
+ * `thinkingBudget: 0` es la clave del asunto. Los modelos Gemini recientes
+ * razonan antes de responder, y ese razonamiento puede tardar decenas de
+ * segundos. En producción se vio exactamente eso: peticiones de ~310 tokens
+ * agotando 28 segundos de espera. Para contestar "¿cuánto vale el plan
+ * básico?" con un catálogo cargado no hace falta deliberar: hace falta
+ * responder rápido.
+ *
+ * `maxOutputTokens` acota la respuesta. Sin tope, el modelo puede irse por las
+ * ramas y el cliente termina leyendo tres párrafos en WhatsApp.
+ */
+const GENERACION = {
+  temperature: 0.7,
+  maxOutputTokens: 500,
+  thinkingConfig: { thinkingBudget: 0 }
+};
+
+/** Quita thinkingConfig por si el modelo en uso no lo soporta. */
+const sinPensamiento = (payload) => {
+  const copia = JSON.parse(JSON.stringify(payload));
+  if (copia.generationConfig) delete copia.generationConfig.thinkingConfig;
+  return copia;
+};
+
+/** ¿El error viene de que el modelo no acepta thinkingConfig? */
+const rechazaPensamiento = (error) => {
+  if (error.response?.status !== 400) return false;
+  const msg = error.response?.data?.error?.message || '';
+  return /thinking|thinkingConfig|thinking_budget|Unknown name/i.test(msg);
+};
+
+/**
  * Llama a Gemini reintentando solo los fallos pasajeros. Dos intentos como
  * máximo: más que eso y el cliente percibe la demora, que es peor que derivar.
  */
@@ -46,16 +79,27 @@ const esperar = (ms) => new Promise((r) => setTimeout(r, ms));
 // bajo carga y el bot derivaba a un humano por nada. Dos intentos de 28s dejan
 // el peor caso en ~57s, que es mucho pero sigue siendo mejor que una derivación
 // falsa — y solo ocurre cuando Google está saturado de verdad.
-const llamarGemini = async (url, payload, timeout = 28000) => {
+const llamarGemini = async (url, payload, timeout = 20000) => {
+  let cuerpo = payload;
   let ultimo;
+
   for (let intento = 1; intento <= 2; intento++) {
     try {
-      return await axios.post(url, payload, {
+      return await axios.post(url, cuerpo, {
         headers: { 'Content-Type': 'application/json' },
         timeout
       });
     } catch (error) {
       ultimo = error;
+
+      // Si este modelo no entiende thinkingConfig, se reintenta sin él en vez
+      // de dejar al cliente sin respuesta por un detalle de compatibilidad.
+      if (rechazaPensamiento(error) && cuerpo.generationConfig?.thinkingConfig) {
+        logger.warn('El modelo no acepta thinkingConfig, reintentando sin él');
+        cuerpo = sinPensamiento(cuerpo);
+        continue;
+      }
+
       if (intento === 2 || !esFalloPasajero(error)) throw error;
       logger.warn('Gemini saturado, reintentando una vez', {
         intento, motivo: error.response?.data?.error?.message || error.message
@@ -180,7 +224,11 @@ const generateBotResponse = async (clientId, conversationHistory, incoming) => {
     const model = config.ai_model || DEFAULT_MODEL;
     const url = `${GEMINI_API_URL}/${model}:generateContent?key=${GEMINI_API_KEY}`;
 
-    const response = await llamarGemini(url, { contents, systemInstruction });
+    const response = await llamarGemini(url, {
+      contents,
+      systemInstruction,
+      generationConfig: GENERACION
+    });
 
     const reply = response.data?.candidates?.[0]?.content?.parts?.[0]?.text;
 
@@ -273,7 +321,9 @@ ${config.knowledge_base ? 'CATÁLOGO Y PRECIOS DEL NEGOCIO (úsalo para nombres 
       generationConfig: {
         responseMimeType: 'application/json',
         responseSchema: schema,
-        temperature: 0
+        temperature: 0,
+        maxOutputTokens: 800,
+        thinkingConfig: { thinkingBudget: 0 }
       }
     });
 
