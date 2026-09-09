@@ -169,6 +169,22 @@ app.get('/tablet', (req, res) => {
   res.sendFile(path.join(__dirname, '../public/tablet.html'));
 });
 
+// Páginas legales. Meta EXIGE la de privacidad para poder publicar la app, y
+// además lee el HTML crudo, así que se sirven desde el servidor y no se generan
+// por JavaScript. Se aceptan variantes con y sin tilde para que ningún enlace
+// mal copiado termine en un 404 — que ante Meta sería un rechazo.
+app.get(['/privacidad', '/privacy', '/politica-de-privacidad'], (req, res) => {
+  res.sendFile(path.join(__dirname, '../public/privacidad.html'));
+});
+app.get(['/terminos', '/términos', '/terms'], (req, res) => {
+  res.sendFile(path.join(__dirname, '../public/terminos.html'));
+});
+// Instrucciones de eliminación de datos: Meta pide una URL propia para esto,
+// y apunta a la sección correspondiente de la política.
+app.get('/eliminar-datos', (req, res) => {
+  res.redirect(301, '/privacidad#eliminar');
+});
+
 // =====================
 // RUTA POR DEFECTO (SPA)
 // =====================
