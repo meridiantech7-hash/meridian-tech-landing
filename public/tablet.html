@@ -235,6 +235,7 @@
     <button class="tab" role="tab" aria-selected="false" data-vista="menu">Menú e info</button>
   </nav>
   <div class="derecha">
+    <button class="btn ok" id="btnInstalar" hidden style="min-height:40px;padding:8px 14px">⬇ Instalar app</button>
     <div class="conexion"><span class="punto" id="punto"></span><span id="estadoCon">conectando</span></div>
     <div class="reloj" id="reloj">--:--</div>
     <button class="btn" id="btnSalir" style="min-height:40px;padding:8px 14px">Salir</button>
@@ -764,6 +765,38 @@ HORARIO: martes a domingo, 12pm a 10pm"></textarea>
 
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('/sw.js').catch(function(){});
+  }
+
+  /* ---------------- Instalación en la tablet ----------------
+     El menú de Chrome esconde "Agregar a pantalla de inicio" en sitios
+     distintos según la versión y el fabricante, y en la Samsung es fácil no
+     encontrarlo. Así que la app pide instalarse sola: Chrome avisa cuando el
+     sitio cumple los requisitos y aquí se guarda ese aviso para dispararlo
+     cuando el usuario toque el botón. */
+  var promptInstalar = null;
+
+  window.addEventListener('beforeinstallprompt', function(e){
+    e.preventDefault();
+    promptInstalar = e;
+    $('btnInstalar').hidden = false;
+  });
+
+  $('btnInstalar').addEventListener('click', function(){
+    if (!promptInstalar) return;
+    promptInstalar.prompt();
+    promptInstalar.userChoice.then(function(res){
+      if (res.outcome === 'accepted') {
+        $('btnInstalar').hidden = true;
+        avisar('Instalada. Búscala en la pantalla de inicio.');
+      }
+      promptInstalar = null;
+    });
+  });
+
+  // Ya instalada: el botón no tiene por qué seguir ahí ocupando espacio
+  window.addEventListener('appinstalled', function(){ $('btnInstalar').hidden = true; });
+  if (window.matchMedia('(display-mode: standalone)').matches) {
+    $('btnInstalar').hidden = true;
   }
 })();
 </script>
