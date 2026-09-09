@@ -4,6 +4,7 @@ const { dbGet, dbAll, dbRun } = require('../config/database');
 const geminiService = require('../services/geminiService');
 const metaSend = require('../services/metaSend');
 const { emitToClient } = require('./conversations');
+const { createOrder } = require('./orders');
 const logger = require('../utils/logger');
 
 const router = express.Router();
@@ -264,6 +265,76 @@ async function processMessage(clientId, msg) {
   logger.info('Respuesta del bot generada y despachada', {
     conversationId: conversation.id, canal: msg.channel_type, entregado: dispatch.sent
   });
+
+  // Después de responder, se revisa si en la conversación quedó un pedido.
+  // Va al final y sin await del cliente final a propósito: si esto falla o
+  // tarda, el cliente ya recibió su respuesta.
+  await syncOrderFromConversation(clientId, conversation, history, incoming, msg);
+}
+
+/**
+ * Arma o actualiza la orden que la IA detecte en el chat.
+ *
+ * Mientras el pedido siga en `por_confirmar` se ACTUALIZA en vez de crear otra:
+ * un cliente que escribe "y súmame una gaseosa" no debe generar dos órdenes.
+ * Una vez que una persona la confirma, deja de tocarse — a partir de ahí lo que
+ * pida de más se maneja como orden nueva, que es como funciona una cocina.
+ */
+async function syncOrderFromConversation(clientId, conversation, history, incoming, msg) {
+  try {
+    const extracted = await geminiService.extractOrder(clientId, history.slice(0, -1), incoming);
+    if (!extracted) return;
+
+    const abierta = await dbGet(
+      "SELECT * FROM orders WHERE conversation_id = ? AND status = 'por_confirmar' ORDER BY created_at DESC LIMIT 1",
+      [conversation.id]
+    );
+
+    const datos = {
+      customer_name: extracted.customer_name || conversation.end_customer_name || null,
+      customer_phone: extracted.customer_phone || conversation.end_customer_id || null,
+      address: extracted.address || null,
+      modality: extracted.modality || 'domicilio',
+      items: extracted.items || [],
+      total: extracted.total || 0,
+      notes: extracted.notes || null
+    };
+
+    if (abierta) {
+      await dbRun(
+        `UPDATE orders SET customer_name=?, customer_phone=?, address=?, modality=?,
+         items=?, total=?, notes=?, ai_confidence=?, ai_raw=?, updated_at=CURRENT_TIMESTAMP
+         WHERE id=?`,
+        [datos.customer_name, datos.customer_phone, datos.address, datos.modality,
+         JSON.stringify(datos.items), datos.total, datos.notes,
+         extracted.confidence || null, extracted.raw || null, abierta.id]
+      );
+      const actualizada = await dbGet('SELECT * FROM orders WHERE id = ?', [abierta.id]);
+      let items = [];
+      try { items = JSON.parse(actualizada.items || '[]'); } catch (e) {}
+      emitToClient(clientId, 'order:updated', { ...actualizada, items });
+      logger.info('Pedido en curso actualizado desde el chat', {
+        orderId: abierta.id, conversationId: conversation.id, items: datos.items.length
+      });
+      return;
+    }
+
+    await createOrder(
+      {
+        ...datos,
+        client_id: clientId,
+        conversation_id: conversation.id,
+        source: 'bot',
+        channel_type: msg.channel_type
+      },
+      null,
+      { confidence: extracted.confidence, raw: extracted.raw }
+    );
+  } catch (error) {
+    logger.error('Error sincronizando el pedido desde la conversación', {
+      conversationId: conversation.id, error: error.message
+    });
+  }
 }
 
 // ── Recepción de eventos (POST) ─────────────────────────────────────────────

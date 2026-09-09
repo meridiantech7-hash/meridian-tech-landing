@@ -1,0 +1,771 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#10141a">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="manifest" href="/manifest.json">
+<link rel="apple-touch-icon" href="/icon-192.png">
+<title>Meridian · Terminal</title>
+<style>
+  /* Tipografía del sistema a propósito: la tablet puede quedarse sin señal en
+     plena hora pico y una fuente descargada dejaría la pantalla ilegible. */
+  :root{
+    --bg:#10141a; --surface:#1a2029; --surface-2:#222b36; --line:#2c3644;
+    --text:#e8edf4; --muted:#93a1b5;
+    --confirmar:#f5a623; --recibido:#4c9aff; --preparando:#ff8a3d;
+    --listo:#2ecc71; --cerrado:#6b7a8d; --peligro:#ff5c5c;
+    --radius:14px;
+    --font:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{height:100%;margin:0;overscroll-behavior:none}
+  body{
+    background:var(--bg);color:var(--text);font-family:var(--font);
+    font-size:16px;line-height:1.45;
+    display:flex;flex-direction:column;
+    -webkit-user-select:none;user-select:none;
+  }
+  button{font-family:inherit;font-size:inherit;cursor:pointer;border:none;background:none;color:inherit}
+  input,textarea,select{font-family:inherit;font-size:16px;-webkit-user-select:text;user-select:text}
+
+  /* ---------- Barra superior ---------- */
+  .top{
+    display:flex;align-items:center;gap:14px;padding:10px 16px;
+    background:var(--surface);border-bottom:1px solid var(--line);flex:none;
+  }
+  .marca{font-weight:700;letter-spacing:.5px;font-size:18px}
+  .marca span{color:var(--recibido)}
+  .tabs{display:flex;gap:6px;margin-left:8px}
+  .tab{
+    padding:11px 18px;border-radius:10px;color:var(--muted);font-weight:600;
+    min-height:48px;display:flex;align-items:center;gap:8px;
+  }
+  .tab[aria-selected="true"]{background:var(--surface-2);color:var(--text)}
+  .tab .badge{
+    background:var(--confirmar);color:#171203;border-radius:999px;
+    padding:1px 8px;font-size:13px;font-weight:800;
+  }
+  .derecha{margin-left:auto;display:flex;align-items:center;gap:14px}
+  .conexion{display:flex;align-items:center;gap:7px;color:var(--muted);font-size:14px}
+  .punto{width:10px;height:10px;border-radius:50%;background:var(--peligro)}
+  .punto.viva{background:var(--listo)}
+  .reloj{font-variant-numeric:tabular-nums;color:var(--muted);font-size:15px}
+
+  /* ---------- Contenedores ---------- */
+  main{flex:1;min-height:0;display:flex}
+  .vista{display:none;flex:1;min-height:0}
+  .vista.activa{display:flex}
+
+  /* ---------- Tablero de órdenes ---------- */
+  .tablero{display:flex;gap:12px;padding:12px;overflow-x:auto;width:100%}
+  .col{
+    flex:0 0 300px;display:flex;flex-direction:column;min-height:0;
+    background:var(--surface);border-radius:var(--radius);border:1px solid var(--line);
+  }
+  .col-cab{
+    display:flex;align-items:center;gap:9px;padding:12px 14px;
+    border-bottom:1px solid var(--line);font-weight:700;font-size:15px;
+  }
+  .col-cab .marca-color{width:11px;height:11px;border-radius:3px}
+  .col-cab .n{margin-left:auto;color:var(--muted);font-variant-numeric:tabular-nums}
+  .col-body{overflow-y:auto;padding:10px;display:flex;flex-direction:column;gap:10px;flex:1}
+
+  .orden{
+    background:var(--surface-2);border-radius:12px;padding:13px;
+    border-left:5px solid var(--cerrado);text-align:left;width:100%;
+  }
+  .orden:active{background:#2a3542}
+  .orden .fila1{display:flex;align-items:baseline;gap:10px}
+  .orden .num{font-size:22px;font-weight:800;font-variant-numeric:tabular-nums}
+  .orden .mod{
+    font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;
+    color:var(--muted);margin-left:auto
+  }
+  .orden .quien{color:var(--muted);font-size:14px;margin-top:3px}
+  .orden ul{margin:9px 0 0;padding:0;list-style:none;display:flex;flex-direction:column;gap:3px}
+  .orden li{font-size:15px;display:flex;gap:8px}
+  .orden li b{color:var(--recibido);font-variant-numeric:tabular-nums;min-width:22px}
+  .orden .pie{display:flex;align-items:center;gap:8px;margin-top:10px}
+  .orden .total{font-weight:700;font-variant-numeric:tabular-nums}
+  .orden .hace{color:var(--muted);font-size:13px;margin-left:auto;font-variant-numeric:tabular-nums}
+  .orden .ia{
+    font-size:11px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;
+    padding:2px 7px;border-radius:5px;background:rgba(245,166,35,.16);color:var(--confirmar)
+  }
+  .vacio{color:var(--muted);text-align:center;padding:26px 10px;font-size:14px}
+
+  /* ---------- Chats ---------- */
+  .chats{display:flex;width:100%;min-height:0}
+  .lista{
+    flex:0 0 320px;border-right:1px solid var(--line);overflow-y:auto;
+    background:var(--surface);
+  }
+  .chat-item{
+    display:block;width:100%;text-align:left;padding:14px 16px;
+    border-bottom:1px solid var(--line);min-height:64px;
+  }
+  .chat-item[aria-current="true"]{background:var(--surface-2)}
+  .chat-item .n1{display:flex;align-items:center;gap:8px}
+  .chat-item .nom{font-weight:600}
+  .chat-item .modo{
+    margin-left:auto;font-size:11px;font-weight:800;text-transform:uppercase;
+    letter-spacing:.5px;padding:2px 7px;border-radius:5px;
+    background:rgba(76,154,255,.16);color:var(--recibido)
+  }
+  .chat-item .modo.humano{background:rgba(245,166,35,.16);color:var(--confirmar)}
+  .chat-item .prev{color:var(--muted);font-size:14px;margin-top:2px}
+
+  .conver{flex:1;display:flex;flex-direction:column;min-width:0}
+  .conver-cab{
+    display:flex;align-items:center;gap:12px;padding:12px 16px;
+    border-bottom:1px solid var(--line);background:var(--surface);flex:none;
+  }
+  .conver-cab .quien{font-weight:700}
+  .conver-cab .acciones{margin-left:auto;display:flex;gap:9px}
+  .btn{
+    padding:11px 16px;border-radius:10px;font-weight:700;min-height:48px;
+    background:var(--surface-2);color:var(--text);border:1px solid var(--line)
+  }
+  .btn:active{transform:translateY(1px)}
+  .btn.primario{background:var(--recibido);color:#04101f;border-color:transparent}
+  .btn.alerta{background:var(--confirmar);color:#171203;border-color:transparent}
+  .btn.ok{background:var(--listo);color:#04150b;border-color:transparent}
+  .btn.peligro{background:transparent;color:var(--peligro);border-color:var(--peligro)}
+  .btn:disabled{opacity:.45}
+
+  .mensajes{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:10px}
+  .msj{max-width:76%;padding:10px 14px;border-radius:14px;font-size:15px;word-wrap:break-word}
+  .msj.cliente{background:var(--surface-2);align-self:flex-start;border-bottom-left-radius:4px}
+  .msj.bot{background:#1e3a5f;align-self:flex-end;border-bottom-right-radius:4px}
+  .msj.dueno{background:#4a3a12;align-self:flex-end;border-bottom-right-radius:4px}
+  .msj .meta{font-size:11px;color:var(--muted);margin-top:4px;display:flex;gap:7px}
+  .escribir{display:flex;gap:10px;padding:12px;border-top:1px solid var(--line);background:var(--surface);flex:none}
+  .escribir input{
+    flex:1;padding:14px;border-radius:10px;border:1px solid var(--line);
+    background:var(--bg);color:var(--text);min-height:50px
+  }
+  .aviso-bot{
+    padding:10px 16px;background:rgba(76,154,255,.1);color:var(--recibido);
+    font-size:14px;text-align:center;border-top:1px solid var(--line)
+  }
+
+  /* ---------- Menú / info ---------- */
+  .menu-vista{flex:1;overflow-y:auto;padding:20px;max-width:900px;margin:0 auto;width:100%}
+  .campo{margin-bottom:20px}
+  .campo label{display:block;font-weight:700;margin-bottom:6px}
+  .campo .ayuda{color:var(--muted);font-size:14px;margin-bottom:9px}
+  .campo textarea{
+    width:100%;min-height:200px;padding:14px;border-radius:10px;
+    border:1px solid var(--line);background:var(--surface);color:var(--text);
+    line-height:1.6;resize:vertical
+  }
+
+  /* ---------- Panel de detalle ---------- */
+  .fondo{
+    position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;
+    align-items:flex-end;justify-content:center;z-index:50
+  }
+  .fondo.abierto{display:flex}
+  .panel{
+    background:var(--surface);width:100%;max-width:620px;border-radius:18px 18px 0 0;
+    max-height:88vh;overflow-y:auto;padding:20px
+  }
+  .panel h2{margin:0 0 4px;font-size:26px}
+  .panel .sub{color:var(--muted);margin-bottom:16px}
+  .detalle{display:flex;flex-direction:column;gap:9px;margin-bottom:18px}
+  .detalle .par{display:flex;gap:12px;padding:9px 0;border-bottom:1px solid var(--line)}
+  .detalle .par span:first-child{color:var(--muted);flex:0 0 120px}
+  .acc-grid{display:flex;flex-wrap:wrap;gap:10px}
+
+  /* ---------- Login ---------- */
+  .login{
+    position:fixed;inset:0;background:var(--bg);display:flex;
+    align-items:center;justify-content:center;z-index:100;padding:20px
+  }
+  .login form{width:100%;max-width:380px}
+  .login h1{font-size:30px;margin:0 0 6px}
+  .login p{color:var(--muted);margin:0 0 24px}
+  .login input{
+    width:100%;padding:15px;margin-bottom:12px;border-radius:10px;
+    border:1px solid var(--line);background:var(--surface);color:var(--text)
+  }
+  .login .btn{width:100%;justify-content:center;display:flex}
+  .error{color:var(--peligro);font-size:14px;margin-top:10px;min-height:20px}
+
+  .aviso{
+    position:fixed;bottom:20px;left:50%;transform:translateX(-50%);
+    background:var(--surface-2);border:1px solid var(--line);padding:13px 20px;
+    border-radius:12px;z-index:200;font-weight:600;display:none;max-width:90vw
+  }
+  .aviso.ver{display:block}
+
+  @media (max-width:820px){
+    .lista{flex:0 0 240px}
+    .col{flex:0 0 265px}
+  }
+</style>
+</head>
+<body>
+
+<!-- ================= LOGIN ================= -->
+<div class="login" id="login">
+  <form id="formLogin">
+    <h1>Meridian <span style="color:var(--recibido)">Terminal</span></h1>
+    <p>Entra con el usuario del negocio</p>
+    <input type="email" id="email" placeholder="Correo" autocomplete="username" required>
+    <input type="password" id="clave" placeholder="Contraseña" autocomplete="current-password" required>
+    <button class="btn primario" type="submit" id="btnEntrar">Entrar</button>
+    <div class="error" id="errLogin"></div>
+  </form>
+</div>
+
+<!-- ================= BARRA ================= -->
+<header class="top">
+  <div class="marca">MERIDIAN<span>·</span></div>
+  <nav class="tabs" role="tablist">
+    <button class="tab" role="tab" aria-selected="true" data-vista="ordenes">
+      Órdenes <span class="badge" id="badgeConf" hidden>0</span>
+    </button>
+    <button class="tab" role="tab" aria-selected="false" data-vista="chats">
+      Chats <span class="badge" id="badgeChats" hidden>0</span>
+    </button>
+    <button class="tab" role="tab" aria-selected="false" data-vista="menu">Menú e info</button>
+  </nav>
+  <div class="derecha">
+    <div class="conexion"><span class="punto" id="punto"></span><span id="estadoCon">conectando</span></div>
+    <div class="reloj" id="reloj">--:--</div>
+    <button class="btn" id="btnSalir" style="min-height:40px;padding:8px 14px">Salir</button>
+  </div>
+</header>
+
+<main>
+  <!-- ================= ÓRDENES ================= -->
+  <section class="vista activa" id="vista-ordenes">
+    <div class="tablero" id="tablero"></div>
+  </section>
+
+  <!-- ================= CHATS ================= -->
+  <section class="vista" id="vista-chats">
+    <div class="chats">
+      <div class="lista" id="listaChats"></div>
+      <div class="conver">
+        <div class="conver-cab">
+          <div>
+            <div class="quien" id="chatQuien">Selecciona una conversación</div>
+            <div style="color:var(--muted);font-size:13px" id="chatCanal"></div>
+          </div>
+          <div class="acciones" id="chatAcciones"></div>
+        </div>
+        <div class="mensajes" id="mensajes">
+          <div class="vacio">Toca un chat de la izquierda para verlo.</div>
+        </div>
+        <div id="zonaEscribir"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= MENÚ ================= -->
+  <section class="vista" id="vista-menu">
+    <div class="menu-vista">
+      <div class="campo">
+        <label for="kb">Menú, precios y datos del negocio</label>
+        <div class="ayuda">
+          Todo lo que escribas aquí es lo que el bot sabe y usa para responder y para
+          armar los pedidos. Escríbelo como se lo explicarías a un empleado nuevo.
+        </div>
+        <textarea id="kb" placeholder="Ej.
+HAMBURGUESAS
+- Clásica: $18.000
+- Doble carne: $25.000
+
+DOMICILIOS
+- Floridablanca: $5.000
+- Bucaramanga centro: $8.000
+
+HORARIO: martes a domingo, 12pm a 10pm"></textarea>
+      </div>
+      <div class="campo">
+        <label for="reglas">Reglas de atención</label>
+        <div class="ayuda">Cómo debe comportarse. Ej: "Nunca prometas tiempos menores a 40 minutos."</div>
+        <textarea id="reglas" style="min-height:130px"></textarea>
+      </div>
+      <div class="acc-grid">
+        <button class="btn ok" id="btnGuardarMenu">Guardar cambios</button>
+        <button class="btn" id="btnRecargarMenu">Descartar</button>
+      </div>
+    </div>
+  </section>
+</main>
+
+<!-- ================= DETALLE DE ORDEN ================= -->
+<div class="fondo" id="fondo">
+  <div class="panel" id="panel"></div>
+</div>
+
+<div class="aviso" id="aviso"></div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script>
+(function(){
+  'use strict';
+
+  var COLS = [
+    {k:'por_confirmar', t:'Por confirmar', c:'var(--confirmar)'},
+    {k:'recibido',      t:'Recibidos',     c:'var(--recibido)'},
+    {k:'preparando',    t:'Preparando',    c:'var(--preparando)'},
+    {k:'listo',         t:'Listos',        c:'var(--listo)'},
+    {k:'entregado',     t:'Entregados',    c:'var(--cerrado)'}
+  ];
+  var SIGUIENTE = {recibido:'preparando', preparando:'listo', listo:'entregado'};
+
+  var token = localStorage.getItem('mt_token');
+  var clientId = localStorage.getItem('mt_client');
+  var ordenes = [], chats = [], chatActivo = null, mensajes = [], socket = null;
+
+  var $ = function(id){ return document.getElementById(id); };
+
+  function avisar(texto){
+    var a = $('aviso');
+    a.textContent = texto;
+    a.classList.add('ver');
+    clearTimeout(avisar._t);
+    avisar._t = setTimeout(function(){ a.classList.remove('ver'); }, 3200);
+  }
+
+  function api(ruta, opciones){
+    opciones = opciones || {};
+    opciones.headers = Object.assign({'Content-Type':'application/json'}, opciones.headers||{},
+      token ? {'Authorization':'Bearer '+token} : {});
+    return fetch('/api'+ruta, opciones).then(function(r){
+      if (r.status === 401 || r.status === 403) { salir(); throw new Error('Sesión vencida'); }
+      return r.json().then(function(j){
+        if (!r.ok) throw new Error(j.error || j.message || ('Error '+r.status));
+        return j;
+      });
+    });
+  }
+
+  function pesos(n){
+    return '$' + (Number(n)||0).toLocaleString('es-CO');
+  }
+
+  function hace(iso){
+    if (!iso) return '';
+    var ms = Date.now() - new Date(iso.replace(' ','T') + (iso.indexOf('Z')<0?'Z':'')).getTime();
+    var min = Math.floor(ms/60000);
+    if (min < 1) return 'ahora';
+    if (min < 60) return min + ' min';
+    return Math.floor(min/60) + ' h';
+  }
+
+  function esc(s){
+    return String(s==null?'':s).replace(/[&<>"']/g, function(c){
+      return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+    });
+  }
+
+  // ---------------- Login ----------------
+  $('formLogin').addEventListener('submit', function(e){
+    e.preventDefault();
+    var b = $('btnEntrar');
+    b.disabled = true; b.textContent = 'Entrando...';
+    $('errLogin').textContent = '';
+
+    fetch('/api/auth/login', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ email: $('email').value.trim(), password: $('clave').value })
+    }).then(function(r){ return r.json().then(function(j){ if(!r.ok) throw new Error(j.error||'No se pudo entrar'); return j; }); })
+      .then(function(j){
+        token = j.data.accessToken;
+        localStorage.setItem('mt_token', token);
+        return api('/clients');
+      })
+      .then(function(j){
+        var lista = j.data || j.clients || [];
+        // Un local tiene un solo negocio: si hay uno, se elige solo.
+        clientId = lista.length ? String(lista[0].id) : '1';
+        localStorage.setItem('mt_client', clientId);
+        $('login').style.display = 'none';
+        arrancar();
+      })
+      .catch(function(err){ $('errLogin').textContent = err.message; })
+      .then(function(){ b.disabled = false; b.textContent = 'Entrar'; });
+  });
+
+  function salir(){
+    localStorage.removeItem('mt_token');
+    localStorage.removeItem('mt_client');
+    token = null;
+    if (socket) { try{ socket.disconnect(); }catch(e){} }
+    $('login').style.display = 'flex';
+  }
+  $('btnSalir').addEventListener('click', salir);
+
+  // ---------------- Pestañas ----------------
+  Array.prototype.forEach.call(document.querySelectorAll('.tab'), function(t){
+    t.addEventListener('click', function(){
+      Array.prototype.forEach.call(document.querySelectorAll('.tab'), function(x){
+        x.setAttribute('aria-selected', x===t ? 'true':'false');
+      });
+      Array.prototype.forEach.call(document.querySelectorAll('.vista'), function(v){
+        v.classList.remove('activa');
+      });
+      $('vista-'+t.dataset.vista).classList.add('activa');
+      if (t.dataset.vista === 'chats') cargarChats();
+      if (t.dataset.vista === 'menu') cargarMenu();
+    });
+  });
+
+  // ---------------- Órdenes ----------------
+  function cargarOrdenes(){
+    return api('/orders?client_id='+clientId).then(function(j){
+      ordenes = j.data || [];
+      pintarTablero();
+    }).catch(function(e){ avisar(e.message); });
+  }
+
+  function pintarTablero(){
+    var cont = $('tablero');
+    cont.innerHTML = '';
+    var porConfirmar = 0;
+
+    COLS.forEach(function(col){
+      var items = ordenes.filter(function(o){ return o.status === col.k; });
+      if (col.k === 'por_confirmar') porConfirmar = items.length;
+
+      var d = document.createElement('div');
+      d.className = 'col';
+      d.innerHTML =
+        '<div class="col-cab"><span class="marca-color" style="background:'+col.c+'"></span>'+
+        esc(col.t)+'<span class="n">'+items.length+'</span></div>'+
+        '<div class="col-body"></div>';
+      var body = d.querySelector('.col-body');
+
+      if (!items.length) {
+        body.innerHTML = '<div class="vacio">Nada por aquí</div>';
+      } else {
+        items.forEach(function(o){ body.appendChild(tarjeta(o, col.c)); });
+      }
+      cont.appendChild(d);
+    });
+
+    var b = $('badgeConf');
+    b.textContent = porConfirmar;
+    b.hidden = porConfirmar === 0;
+  }
+
+  function tarjeta(o, color){
+    var el = document.createElement('button');
+    el.className = 'orden';
+    el.style.borderLeftColor = color;
+
+    var lis = (o.items||[]).map(function(i){
+      return '<li><b>'+(i.cantidad||1)+'×</b><span>'+esc(i.nombre)+
+             (i.notas ? ' <span style="color:var(--muted)">('+esc(i.notas)+')</span>' : '')+'</span></li>';
+    }).join('');
+
+    el.innerHTML =
+      '<div class="fila1"><span class="num">'+esc(o.order_number||o.id)+'</span>'+
+      (o.source === 'bot' ? '<span class="ia">IA</span>' : '')+
+      '<span class="mod">'+esc(o.modality||'')+'</span></div>'+
+      '<div class="quien">'+esc(o.customer_name || o.customer_phone || 'Sin nombre')+'</div>'+
+      (lis ? '<ul>'+lis+'</ul>' : '')+
+      '<div class="pie"><span class="total">'+pesos(o.total)+'</span>'+
+      '<span class="hace">'+hace(o.created_at)+'</span></div>';
+
+    el.addEventListener('click', function(){ abrirOrden(o); });
+    return el;
+  }
+
+  function abrirOrden(o){
+    var lis = (o.items||[]).map(function(i){
+      return '<div class="par"><span>'+(i.cantidad||1)+'× '+esc(i.nombre)+'</span><span>'+
+             pesos((i.precio||0)*(i.cantidad||1))+'</span></div>';
+    }).join('') || '<div class="vacio">Sin productos cargados</div>';
+
+    var acciones = '';
+    if (o.status === 'por_confirmar') {
+      acciones += '<button class="btn ok" data-acc="confirmar">Confirmar y mandar a cocina</button>';
+    } else if (SIGUIENTE[o.status]) {
+      acciones += '<button class="btn primario" data-acc="avanzar">Marcar como '+
+                  esc(SIGUIENTE[o.status])+'</button>';
+    }
+    if (o.conversation_id) {
+      acciones += '<button class="btn" data-acc="chat">Ver el chat</button>';
+    }
+    if (o.status !== 'cancelado' && o.status !== 'entregado') {
+      acciones += '<button class="btn peligro" data-acc="cancelar">Cancelar orden</button>';
+    }
+
+    $('panel').innerHTML =
+      '<h2>Orden '+esc(o.order_number||o.id)+'</h2>'+
+      '<div class="sub">'+esc(o.status.replace('_',' '))+' · '+esc(o.modality||'')+' · '+
+      (o.source==='bot'?'la armó la IA':'cargada a mano')+
+      (o.ai_confidence ? ' · confianza '+esc(o.ai_confidence) : '')+'</div>'+
+      '<div class="detalle">'+
+        '<div class="par"><span>Cliente</span><span>'+esc(o.customer_name||'—')+'</span></div>'+
+        '<div class="par"><span>Teléfono</span><span>'+esc(o.customer_phone||'—')+'</span></div>'+
+        '<div class="par"><span>Dirección</span><span>'+esc(o.address||'—')+'</span></div>'+
+        (o.notes ? '<div class="par"><span>Notas</span><span>'+esc(o.notes)+'</span></div>' : '')+
+      '</div>'+
+      '<div class="detalle">'+lis+
+        '<div class="par" style="border:none"><span><b>Total</b></span><span><b>'+pesos(o.total)+'</b></span></div>'+
+      '</div>'+
+      '<div class="acc-grid">'+acciones+
+        '<button class="btn" data-acc="cerrar">Cerrar</button></div>';
+
+    $('fondo').classList.add('abierto');
+
+    $('panel').onclick = function(ev){
+      var b = ev.target.closest('[data-acc]');
+      if (!b) return;
+      var acc = b.dataset.acc;
+
+      if (acc === 'cerrar') return cerrarPanel();
+      if (acc === 'chat') {
+        cerrarPanel();
+        document.querySelector('.tab[data-vista="chats"]').click();
+        setTimeout(function(){ abrirChatPorId(o.conversation_id); }, 350);
+        return;
+      }
+
+      b.disabled = true;
+      var p;
+      if (acc === 'confirmar') {
+        p = api('/orders/'+o.id+'/confirm', {method:'POST'});
+      } else if (acc === 'avanzar') {
+        p = api('/orders/'+o.id+'/status', {method:'PATCH', body:JSON.stringify({status:SIGUIENTE[o.status]})});
+      } else {
+        p = api('/orders/'+o.id+'/status', {method:'PATCH', body:JSON.stringify({status:'cancelado'})});
+      }
+      p.then(function(){ cerrarPanel(); cargarOrdenes(); avisar('Orden actualizada'); })
+       .catch(function(e){ avisar(e.message); b.disabled = false; });
+    };
+  }
+
+  function cerrarPanel(){ $('fondo').classList.remove('abierto'); }
+  $('fondo').addEventListener('click', function(e){ if (e.target === $('fondo')) cerrarPanel(); });
+
+  // ---------------- Chats ----------------
+  function cargarChats(){
+    return api('/conversations?client_id='+clientId).then(function(j){
+      chats = j.data || [];
+      pintarChats();
+    }).catch(function(e){ avisar(e.message); });
+  }
+
+  function pintarChats(){
+    var cont = $('listaChats');
+    if (!chats.length) { cont.innerHTML = '<div class="vacio">Todavía no hay conversaciones.</div>'; return; }
+    cont.innerHTML = '';
+    var enHumano = 0;
+
+    chats.forEach(function(c){
+      if (c.mode !== 'bot') enHumano++;
+      var b = document.createElement('button');
+      b.className = 'chat-item';
+      b.setAttribute('aria-current', chatActivo && chatActivo.id === c.id ? 'true':'false');
+      b.innerHTML =
+        '<div class="n1"><span class="nom">'+esc(c.end_customer_name || c.end_customer_id)+'</span>'+
+        '<span class="modo'+(c.mode!=='bot'?' humano':'')+'">'+(c.mode==='bot'?'bot':'tú')+'</span></div>'+
+        '<div class="prev">'+esc(c.channel_type)+' · '+hace(c.last_message_at)+'</div>';
+      b.addEventListener('click', function(){ abrirChat(c); });
+      cont.appendChild(b);
+    });
+
+    var bd = $('badgeChats');
+    bd.textContent = enHumano;
+    bd.hidden = enHumano === 0;
+  }
+
+  function abrirChatPorId(id){
+    var c = chats.filter(function(x){ return x.id === id; })[0];
+    if (c) abrirChat(c); else cargarChats().then(function(){
+      var c2 = chats.filter(function(x){ return x.id === id; })[0];
+      if (c2) abrirChat(c2);
+    });
+  }
+
+  function abrirChat(c){
+    chatActivo = c;
+    pintarChats();
+    $('chatQuien').textContent = c.end_customer_name || c.end_customer_id;
+    $('chatCanal').textContent = c.channel_type + ' · ' + (c.mode === 'bot' ? 'el bot está contestando' : 'lo estás atendiendo tú');
+    pintarAcciones();
+
+    api('/conversations/'+c.id+'/messages').then(function(j){
+      mensajes = (j.data && j.data.messages) || [];
+      pintarMensajes();
+    }).catch(function(e){ avisar(e.message); });
+  }
+
+  function pintarAcciones(){
+    var c = chatActivo;
+    if (!c) { $('chatAcciones').innerHTML = ''; $('zonaEscribir').innerHTML = ''; return; }
+
+    if (c.mode === 'bot') {
+      $('chatAcciones').innerHTML = '<button class="btn alerta" id="btnPausar">Pausar bot y contestar yo</button>';
+      $('btnPausar').onclick = function(){
+        this.disabled = true;
+        api('/conversations/'+c.id+'/pause', {method:'POST'}).then(function(){
+          c.mode = 'human'; abrirChat(c); avisar('Bot pausado. Ahora escribes tú.');
+        }).catch(function(e){ avisar(e.message); });
+      };
+      $('zonaEscribir').innerHTML =
+        '<div class="aviso-bot">El bot está atendiendo este chat. Pausa el bot para escribir tú.</div>';
+    } else {
+      $('chatAcciones').innerHTML = '<button class="btn ok" id="btnSeguir">Devolver al bot</button>';
+      $('btnSeguir').onclick = function(){
+        this.disabled = true;
+        api('/conversations/'+c.id+'/resume', {method:'POST'}).then(function(){
+          c.mode = 'bot'; abrirChat(c); avisar('El bot volvió a tomar el chat.');
+        }).catch(function(e){ avisar(e.message); });
+      };
+      $('zonaEscribir').innerHTML =
+        '<form class="escribir" id="formMsj">'+
+        '<input id="txtMsj" placeholder="Escribe tu respuesta..." autocomplete="off">'+
+        '<button class="btn primario" type="submit">Enviar</button></form>';
+      $('formMsj').onsubmit = function(ev){
+        ev.preventDefault();
+        var txt = $('txtMsj').value.trim();
+        if (!txt) return;
+        $('txtMsj').value = '';
+        api('/conversations/'+c.id+'/messages', {method:'POST', body:JSON.stringify({content:txt})})
+          .then(function(j){
+            if (j.warning) avisar(j.warning);
+          })
+          .catch(function(e){ avisar(e.message); });
+      };
+    }
+  }
+
+  function pintarMensajes(){
+    var cont = $('mensajes');
+    if (!mensajes.length) { cont.innerHTML = '<div class="vacio">Sin mensajes todavía.</div>'; return; }
+    cont.innerHTML = '';
+    mensajes.forEach(function(m){
+      var d = document.createElement('div');
+      var clase = m.sender_type === 'end_customer' ? 'cliente' : (m.sender_type === 'owner' ? 'dueno' : 'bot');
+      d.className = 'msj ' + clase;
+      d.innerHTML = esc(m.content) +
+        '<div class="meta"><span>'+(clase==='cliente'?'cliente':clase==='dueno'?'tú':'bot')+'</span>'+
+        '<span>'+hace(m.created_at)+'</span>'+
+        (m.delivered === false ? '<span style="color:var(--peligro)">no entregado</span>' : '')+'</div>';
+      cont.appendChild(d);
+    });
+    cont.scrollTop = cont.scrollHeight;
+  }
+
+  // ---------------- Menú ----------------
+  function cargarMenu(){
+    api('/bot-config/'+clientId).then(function(j){
+      $('kb').value = j.data.knowledge_base || '';
+      var r = j.data.business_rules;
+      $('reglas').value = typeof r === 'string' ? r : (r && r.texto) || '';
+    }).catch(function(e){ avisar(e.message); });
+  }
+  $('btnRecargarMenu').addEventListener('click', cargarMenu);
+  $('btnGuardarMenu').addEventListener('click', function(){
+    var b = this; b.disabled = true; b.textContent = 'Guardando...';
+    api('/bot-config/'+clientId, {
+      method:'PUT',
+      body: JSON.stringify({ knowledge_base: $('kb').value, business_rules: { texto: $('reglas').value } })
+    }).then(function(){ avisar('Guardado. El bot ya está usando esta información.'); })
+      .catch(function(e){ avisar(e.message); })
+      .then(function(){ b.disabled = false; b.textContent = 'Guardar cambios'; });
+  });
+
+  // ---------------- Tiempo real ----------------
+  function conectarSocket(){
+    socket = io({ auth: { token: token } });
+
+    socket.on('connect', function(){
+      $('punto').classList.add('viva');
+      $('estadoCon').textContent = 'en vivo';
+      socket.emit('join_client', Number(clientId));
+    });
+    socket.on('disconnect', function(){
+      $('punto').classList.remove('viva');
+      $('estadoCon').textContent = 'sin conexión';
+    });
+    socket.on('connect_error', function(){
+      $('punto').classList.remove('viva');
+      $('estadoCon').textContent = 'sin conexión';
+    });
+
+    socket.on('order:new', function(o){
+      ordenes.unshift(o); pintarTablero();
+      avisar('Nueva orden ' + (o.order_number||'') + (o.source==='bot' ? ' — revísala' : ''));
+      pitido();
+    });
+    socket.on('order:updated', function(o){
+      var i = ordenes.findIndex(function(x){ return x.id === o.id; });
+      if (i >= 0) ordenes[i] = o; else ordenes.unshift(o);
+      pintarTablero();
+    });
+
+    socket.on('conversation:new_message', function(m){
+      if (chatActivo && m.conversation_id === chatActivo.id) {
+        mensajes.push(m); pintarMensajes();
+      }
+      cargarChats();
+    });
+    socket.on('conversation:mode_changed', function(ev){
+      if (chatActivo && ev.conversationId === chatActivo.id) {
+        chatActivo.mode = ev.mode; abrirChat(chatActivo);
+      }
+      cargarChats();
+      if (ev.mode === 'human') { avisar('Un cliente pidió hablar con una persona'); pitido(); }
+    });
+    socket.on('conversation:delivery_failed', function(ev){
+      avisar(ev.outsideWindow
+        ? 'No se pudo entregar: pasaron más de 24h desde el último mensaje del cliente.'
+        : 'Un mensaje no se pudo entregar.');
+    });
+  }
+
+  /* Un pitido corto generado en el momento: en una cocina ruidosa el aviso
+     visual solo no alcanza, y así no hay que cargar un archivo de audio. */
+  function pitido(){
+    try {
+      var Ctx = window.AudioContext || window.webkitAudioContext;
+      if (!Ctx) return;
+      pitido.ctx = pitido.ctx || new Ctx();
+      var o = pitido.ctx.createOscillator(), g = pitido.ctx.createGain();
+      o.frequency.value = 880; o.type = 'sine';
+      g.gain.setValueAtTime(0.001, pitido.ctx.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.25, pitido.ctx.currentTime + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.001, pitido.ctx.currentTime + 0.35);
+      o.connect(g); g.connect(pitido.ctx.destination);
+      o.start(); o.stop(pitido.ctx.currentTime + 0.36);
+    } catch(e){}
+  }
+
+  // ---------------- Arranque ----------------
+  function reloj(){
+    var d = new Date();
+    $('reloj').textContent = String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
+  }
+
+  function arrancar(){
+    reloj(); setInterval(reloj, 20000);
+    cargarOrdenes();
+    conectarSocket();
+    // Los tiempos ("hace 12 min") se refrescan solos aunque no llegue nada nuevo
+    setInterval(pintarTablero, 60000);
+    // Red de seguridad: si el socket se cayó y volvió, esto reconcilia el tablero
+    setInterval(function(){ if (!socket || !socket.connected) cargarOrdenes(); }, 45000);
+  }
+
+  if (token && clientId) { $('login').style.display = 'none'; arrancar(); }
+
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/sw.js').catch(function(){});
+  }
+})();
+</script>
+</body>
+</html>

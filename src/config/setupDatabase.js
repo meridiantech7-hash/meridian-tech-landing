@@ -202,7 +202,60 @@ CREATE TABLE IF NOT EXISTS handoff_events (
   FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
 );
 
+-- Órdenes / pedidos del negocio.
+--
+-- Los productos van como JSON en "items" en vez de una tabla aparte: el tablero
+-- de la tablet los pinta tal cual y así una orden se lee de un solo golpe, sin
+-- JOIN. Si algún día hace falta reportería por producto, se normaliza entonces.
+--
+-- "status" sigue el flujo que ya usaba la interfaz anterior de cocina:
+--   por_confirmar → recibido → preparando → listo → entregado   (+ cancelado)
+--
+-- "por_confirmar" es el estado en el que caen las órdenes que arma la IA a
+-- partir del chat: nadie cocina nada hasta que una persona la revise y acepte.
+CREATE TABLE IF NOT EXISTS orders (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  client_id INTEGER NOT NULL,
+  conversation_id INTEGER,                -- de qué chat salió (null si se creó a mano)
+  order_number TEXT,                      -- consecutivo visible del día, ej. "A-014"
+  status TEXT DEFAULT 'por_confirmar',
+  source TEXT DEFAULT 'bot',              -- bot | tablet | jefe
+  channel_type TEXT,                      -- whatsapp | instagram | messenger | manual
+  customer_name TEXT,
+  customer_phone TEXT,
+  address TEXT,
+  modality TEXT DEFAULT 'domicilio',      -- domicilio | recoger | mesa
+  items TEXT DEFAULT '[]',                -- JSON: [{nombre, cantidad, precio, notas}]
+  total INTEGER DEFAULT 0,                -- en pesos, sin decimales
+  notes TEXT,
+  ai_confidence TEXT,                     -- alta | media | baja (qué tan segura quedó la IA)
+  ai_raw TEXT,                            -- lo que extrajo la IA, para auditar errores
+  confirmed_by INTEGER,                   -- usuario que la aceptó
+  confirmed_at DATETIME,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE,
+  FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE SET NULL
+);
+
+-- Bitácora de cambios de estado: quién movió la orden y cuándo. Sirve para
+-- reclamos ("¿a qué hora se marcó lista?") y para medir tiempos de cocina.
+CREATE TABLE IF NOT EXISTS order_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  order_id INTEGER NOT NULL,
+  from_status TEXT,
+  to_status TEXT NOT NULL,
+  user_id INTEGER,
+  detail TEXT,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE
+);
+
 -- Índices para mejor desempeño
+CREATE INDEX IF NOT EXISTS idx_orders_client_status ON orders(client_id, status);
+CREATE INDEX IF NOT EXISTS idx_orders_created ON orders(created_at);
+CREATE INDEX IF NOT EXISTS idx_orders_conversation ON orders(conversation_id);
+CREATE INDEX IF NOT EXISTS idx_order_events_order ON order_events(order_id);
 CREATE INDEX IF NOT EXISTS idx_clients_email ON clients(email);
 CREATE INDEX IF NOT EXISTS idx_clients_status ON clients(status);
 CREATE INDEX IF NOT EXISTS idx_subscriptions_client ON subscriptions(client_id);
@@ -240,6 +293,8 @@ async function setupDatabase() {
   logger.info('   - messages (Mensajes para supervisión en vivo)');
   logger.info('   - handoff_events (Auditoría de derivación a humano)');
   logger.info('   - bot_configs (Reglas/conocimiento del nodo de IA por cliente)');
+  logger.info('   - orders (Órdenes del negocio, tablero de la tablet)');
+  logger.info('   - order_events (Bitácora de cambios de estado de cada orden)');
 }
 
 // Ejecutar si se llama directamente vía CLI (npm run setup)

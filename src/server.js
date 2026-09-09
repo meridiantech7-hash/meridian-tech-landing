@@ -21,6 +21,7 @@ const plansRoutes = require('./routes/plans');
 const paymentsRoutes = require('./routes/payments');
 const { router: conversationsRoutes, setIO } = require('./routes/conversations');
 const botConfigRoutes = require('./routes/botConfig');
+const { router: ordersRoutes } = require('./routes/orders');
 const metaWebhookRoutes = require('./routes/metaWebhook');
 
 const app = express();
@@ -113,6 +114,7 @@ app.use('/api/plans', plansRoutes);
 app.use('/api/payments', paymentsRoutes);
 app.use('/api/conversations', conversationsRoutes);
 app.use('/api/bot-config', botConfigRoutes);
+app.use('/api/orders', ordersRoutes);
 // Webhook único de Meta (WhatsApp + Instagram + Messenger). Sin verifyToken:
 // lo llama Meta, no un admin; se protege con hub.verify_token (GET) y
 // firma HMAC X-Hub-Signature-256 (POST).
@@ -155,6 +157,11 @@ io.on('connection', (socket) => {
 // Panel administrativo
 app.get('/admin', (req, res) => {
   res.sendFile(path.join(__dirname, '../public/admin.html'));
+});
+
+// Terminal de la tablet (PWA instalable en la Samsung del local)
+app.get('/tablet', (req, res) => {
+  res.sendFile(path.join(__dirname, '../public/tablet.html'));
 });
 
 // =====================

@@ -155,6 +155,108 @@ const generateBotResponse = async (clientId, conversationHistory, incoming) => {
 };
 
 /**
+ * Lee la conversación y arma una orden estructurada, si es que hay una.
+ *
+ * Va en una llamada aparte de la respuesta al cliente y a propósito: obligar al
+ * mismo turno a producir texto conversacional Y JSON estricto degrada las dos
+ * cosas. Aquí se usa `responseMimeType: application/json` con esquema, así que
+ * el modelo no puede devolver prosa ni ```json``` alrededor.
+ *
+ * Devuelve `null` cuando no hay pedido — que es el caso más común (saludos,
+ * preguntas por precios, quejas). El que llama NO debe crear nada si es null.
+ *
+ * @returns {{items, customer_name, customer_phone, address, modality, total, notes, confidence}|null}
+ */
+const extractOrder = async (clientId, conversationHistory, incoming) => {
+  if (!isConfigured()) return null;
+
+  const config = await getBotConfig(clientId);
+
+  const transcript = [...conversationHistory, { sender_type: 'end_customer', content: incoming.text || '' }]
+    .filter(m => m.content)
+    .map(m => `${m.sender_type === 'end_customer' ? 'CLIENTE' : 'NEGOCIO'}: ${m.content}`)
+    .join('\n');
+
+  if (!transcript.trim()) return null;
+
+  const instruction = `Eres un extractor de pedidos. Lee la conversación y decide si el CLIENTE ya pidió algo concreto.
+
+REGLAS ESTRICTAS:
+- Si el cliente solo saluda, pregunta precios, horarios o se queja SIN pedir, devuelve has_order=false.
+- Solo devuelve has_order=true cuando hay al menos un producto con cantidad clara.
+- NO inventes productos, precios, direcciones ni teléfonos que no estén en la conversación.
+- Si un dato no aparece, déjalo vacío. Es mejor vacío que inventado.
+- confidence: "alta" si todo está explícito; "media" si dedujiste algo; "baja" si dudas.
+- modality: "domicilio" si pidió envío, "recoger" si pasa por él, "mesa" si come ahí. Si no se sabe, "domicilio".
+- total: suma en pesos colombianos, sin puntos ni decimales. Si no hay precios, 0.
+
+${config.knowledge_base ? 'CATÁLOGO Y PRECIOS DEL NEGOCIO (úsalo para nombres y precios exactos):\n' + config.knowledge_base : ''}`;
+
+  const schema = {
+    type: 'OBJECT',
+    properties: {
+      has_order: { type: 'BOOLEAN' },
+      confidence: { type: 'STRING', enum: ['alta', 'media', 'baja'] },
+      customer_name: { type: 'STRING' },
+      customer_phone: { type: 'STRING' },
+      address: { type: 'STRING' },
+      modality: { type: 'STRING', enum: ['domicilio', 'recoger', 'mesa'] },
+      notes: { type: 'STRING' },
+      total: { type: 'INTEGER' },
+      items: {
+        type: 'ARRAY',
+        items: {
+          type: 'OBJECT',
+          properties: {
+            nombre: { type: 'STRING' },
+            cantidad: { type: 'INTEGER' },
+            precio: { type: 'INTEGER' },
+            notas: { type: 'STRING' }
+          },
+          required: ['nombre', 'cantidad']
+        }
+      }
+    },
+    required: ['has_order', 'confidence', 'items']
+  };
+
+  try {
+    const model = config.ai_model || DEFAULT_MODEL;
+    const url = `${GEMINI_API_URL}/${model}:generateContent?key=${GEMINI_API_KEY}`;
+
+    const response = await axios.post(url, {
+      systemInstruction: { parts: [{ text: instruction }] },
+      contents: [{ role: 'user', parts: [{ text: transcript }] }],
+      generationConfig: {
+        responseMimeType: 'application/json',
+        responseSchema: schema,
+        temperature: 0
+      }
+    }, { headers: { 'Content-Type': 'application/json' }, timeout: 20000 });
+
+    const raw = response.data?.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (!raw) return null;
+
+    const parsed = JSON.parse(raw);
+    if (!parsed.has_order || !Array.isArray(parsed.items) || parsed.items.length === 0) {
+      return null;
+    }
+
+    logger.info('La IA detectó un pedido en la conversación', {
+      clientId, items: parsed.items.length, confianza: parsed.confidence
+    });
+    return { ...parsed, raw };
+  } catch (error) {
+    // Que falle la extracción NUNCA debe tumbar la respuesta al cliente: el bot
+    // ya contestó, esto es un extra. Se registra y se sigue.
+    logger.warn('No se pudo extraer el pedido de la conversación', {
+      clientId, error: error.response?.data?.error?.message || error.message
+    });
+    return null;
+  }
+};
+
+/**
  * Crea o actualiza la configuración del bot de un cliente.
  */
 const upsertBotConfig = async (clientId, data) => {
@@ -189,6 +291,7 @@ const upsertBotConfig = async (clientId, data) => {
 module.exports = {
   isConfigured,
   generateBotResponse,
+  extractOrder,
   getBotConfig,
   upsertBotConfig,
   detectHandoffKeyword
