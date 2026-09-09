@@ -3,6 +3,11 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- Verificación de propiedad del dominio ante Meta (Business Manager).
+     Debe vivir en el <head> de la página de inicio y NO puede inyectarse por
+     JavaScript: Meta lee el HTML crudo. No borrar — si se cae, el portfolio
+     pierde la verificación del dominio. -->
+<meta name="facebook-domain-verification" content="zfldenv3jlxunlpwym82jpb3hsu579" />
 <title>MeridianTech — Inteligencia artificial, software y automatización</title>
 <meta http-equiv="X-UA-Compatible" content="IE=edge">
 <!-- La CSP real se envía por header HTTP desde el servidor (src/server.js,
