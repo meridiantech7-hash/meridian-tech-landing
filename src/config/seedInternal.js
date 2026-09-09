@@ -55,7 +55,7 @@ async function seedInternal() {
   // 3. Configuración del nodo de IA para MeridianTech (capa B) — conocimiento
   // real extraído de la propuesta de valor y los planes de la landing.
   await geminiService.upsertBotConfig(internalClientId, {
-    ai_model: 'gemini-3.6-flash',
+    ai_model: 'gemini-3.5-flash-lite',
     system_prompt: 'Eres el asistente de atención de MeridianTech, una empresa colombiana de software, IA y automatización. Respondes por WhatsApp a personas que preguntan por los servicios. Tono: claro, directo, profesional pero cercano, sin tecnicismos innecesarios. Nunca inventes precios, plazos ni funcionalidades que no estén en el conocimiento previo.',
     business_rules: {
       horario_atencion: 'El bot atiende 24/7; para agendar una llamada con el equipo humano se debe derivar',

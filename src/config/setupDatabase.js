@@ -9,7 +9,13 @@ const migrations = [
   "ALTER TABLE plans ADD COLUMN message_overage_price INTEGER DEFAULT 0",
   "ALTER TABLE plans ADD COLUMN call_minutes_included INTEGER DEFAULT 0",
   "ALTER TABLE plans ADD COLUMN minute_overage_price INTEGER DEFAULT 0",
-  "ALTER TABLE clients ADD COLUMN is_internal INTEGER DEFAULT 0"
+  "ALTER TABLE clients ADD COLUMN is_internal INTEGER DEFAULT 0",
+  // El modelo guardado por cliente manda sobre el valor por defecto del código,
+  // así que cambiar la constante no basta: hay que mover a los que ya existen.
+  // Se migran solo los modelos que se midieron lentos o que dejaron de estar
+  // disponibles; si alguien eligió otro a propósito, se respeta.
+  `UPDATE bot_configs SET ai_model = 'gemini-3.5-flash-lite'
+     WHERE ai_model IN ('gemini-3.6-flash','gemini-2.5-flash','gemini-1.5-flash','gemini-2.0-flash')`
 ];
 
 async function runMigrations() {

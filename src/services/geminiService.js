@@ -16,7 +16,28 @@ const logger = require('../utils/logger');
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models';
-const DEFAULT_MODEL = 'gemini-3.6-flash';
+/**
+ * Modelo por defecto, elegido midiendo y no por intuición. Latencias reales
+ * contra esta misma llave, respondiendo lo mismo:
+ *
+ *   gemini-3.5-flash-lite     0.8 s   ← elegido
+ *   gemini-flash-lite-latest  0.7 s   (alias móvil; se evita para que el
+ *                                      comportamiento no cambie solo)
+ *   gemini-3.6-flash          7.6 s   + 503 por saturación en horas pico
+ *   gemini-3.5-flash          9.5 s
+ *   gemini-2.5-flash          no disponible para esta llave
+ *
+ * Para atender WhatsApp con un catálogo cargado, la diferencia entre 0.8 s y
+ * 8 s decide si el cliente sigue ahí. Un modelo "lite" alcanza de sobra para
+ * responder con información que ya está en el prompt.
+ */
+const DEFAULT_MODEL = 'gemini-3.5-flash-lite';
+
+/**
+ * Si el modelo principal se cae o se satura, se intenta con estos antes de
+ * derivar a un humano. Van de más rápido a más capaz.
+ */
+const MODELOS_RESPALDO = ['gemini-3.6-flash', 'gemini-3.5-flash'];
 
 const isConfigured = () => !!GEMINI_API_KEY;
 
@@ -79,10 +100,6 @@ const rechazaPensamiento = (error) => error.response?.status === 400;
  * Llama a Gemini reintentando solo los fallos pasajeros. Dos intentos como
  * máximo: más que eso y el cliente percibe la demora, que es peor que derivar.
  */
-// 28s por intento: en producción `gemini-3.6-flash` pasó de 20s varias veces
-// bajo carga y el bot derivaba a un humano por nada. Dos intentos de 28s dejan
-// el peor caso en ~57s, que es mucho pero sigue siendo mejor que una derivación
-// falsa — y solo ocurre cuando Google está saturado de verdad.
 const llamarGemini = async (url, payload, timeout = 20000) => {
   let cuerpo = payload;
   let ultimo;
@@ -245,29 +262,52 @@ const generateBotResponse = async (clientId, conversationHistory, incoming, mode
   const contents = buildContents(conversationHistory, newMessagePart);
   const systemInstruction = { parts: [{ text: buildSystemInstruction(config) }] };
 
-  try {
-    const model = modeloForzado || config.ai_model || DEFAULT_MODEL;
-    const url = `${GEMINI_API_URL}/${model}:generateContent?key=${GEMINI_API_KEY}`;
+  // Cuando se fuerza un modelo (diagnóstico) se prueba solo ese, para que la
+  // medición sea del modelo pedido y no de un respaldo.
+  const principal = modeloForzado || config.ai_model || DEFAULT_MODEL;
+  const aProbar = modeloForzado
+    ? [principal]
+    : [principal, ...MODELOS_RESPALDO.filter((m) => m !== principal)];
 
-    const response = await llamarGemini(url, {
-      contents,
-      systemInstruction,
-      generationConfig: GENERACION
-    });
+  let ultimoError;
 
-    const reply = response.data?.candidates?.[0]?.content?.parts?.[0]?.text;
+  for (const model of aProbar) {
+    try {
+      const url = `${GEMINI_API_URL}/${model}:generateContent?key=${GEMINI_API_KEY}`;
+      const response = await llamarGemini(url, {
+        contents,
+        systemInstruction,
+        generationConfig: GENERACION
+      });
 
-    if (!reply) {
-      logger.warn('Gemini no devolvió texto utilizable', { clientId, raw: response.data });
-      return { handoff: 'sin respuesta del modelo', reply: null };
+      const reply = response.data?.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (!reply) {
+        logger.warn('Gemini no devolvió texto utilizable', { clientId, model });
+        ultimoError = new Error('sin texto');
+        continue;
+      }
+
+      if (model !== principal) {
+        logger.warn('Respondió un modelo de respaldo', { clientId, principal, model });
+      } else {
+        logger.info('Respuesta del bot generada', { clientId, model });
+      }
+      return { handoff: null, reply };
+    } catch (error) {
+      ultimoError = error;
+      logger.warn('Modelo falló, probando el siguiente si queda', {
+        clientId, model, motivo: error.response?.data?.error?.message || error.message
+      });
     }
-
-    logger.info('Respuesta del bot generada', { clientId, model });
-    return { handoff: null, reply };
-  } catch (error) {
-    logger.error('Error llamando a Gemini', { clientId, error: error.response?.data || error.message });
-    return { handoff: 'error de IA', reply: null };
   }
+
+  // Agotados todos: derivar a un humano es preferible a inventar una respuesta.
+  logger.error('Ningún modelo de Gemini respondió', {
+    clientId,
+    probados: aProbar,
+    error: ultimoError?.response?.data || ultimoError?.message
+  });
+  return { handoff: 'error de IA', reply: null };
 };
 
 /**
