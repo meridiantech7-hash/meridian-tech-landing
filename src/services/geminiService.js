@@ -64,12 +64,16 @@ const sinPensamiento = (payload) => {
   return copia;
 };
 
-/** ¿El error viene de que el modelo no acepta thinkingConfig? */
-const rechazaPensamiento = (error) => {
-  if (error.response?.status !== 400) return false;
-  const msg = error.response?.data?.error?.message || '';
-  return /thinking|thinkingConfig|thinking_budget|Unknown name/i.test(msg);
-};
+/**
+ * ¿Conviene reintentar sin thinkingConfig?
+ *
+ * Cualquier 400 basta como señal. Gemini devuelve un escueto "Request contains
+ * an invalid argument" sin decir cuál, así que buscar la palabra "thinking" en
+ * el mensaje no sirve de nada: si nosotros mandamos ese campo y la API rechazó
+ * la petición, ese campo es el primer sospechoso. Peor caso, se reintenta una
+ * vez de más y falla igual; mejor caso, el cliente recibe su respuesta.
+ */
+const rechazaPensamiento = (error) => error.response?.status === 400;
 
 /**
  * Llama a Gemini reintentando solo los fallos pasajeros. Dos intentos como
