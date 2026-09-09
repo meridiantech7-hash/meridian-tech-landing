@@ -32,6 +32,11 @@ const io = new SocketIOServer(httpServer, {
 setIO(io);
 const PORT = process.env.PORT || 8080;
 
+// Railway sirve detrás de su proxy, así que la IP real del cliente llega en
+// X-Forwarded-For. Sin esto, express-rate-limit ve a TODO el tráfico como una
+// sola IP (la del proxy): o bloquea a todos por culpa de uno, o no limita nada.
+app.set('trust proxy', 1);
+
 // =====================
 // MIDDLEWARES DE SEGURIDAD
 // =====================

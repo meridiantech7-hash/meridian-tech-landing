@@ -42,7 +42,11 @@ const esperar = (ms) => new Promise((r) => setTimeout(r, ms));
  * Llama a Gemini reintentando solo los fallos pasajeros. Dos intentos como
  * máximo: más que eso y el cliente percibe la demora, que es peor que derivar.
  */
-const llamarGemini = async (url, payload, timeout = 20000) => {
+// 28s por intento: en producción `gemini-3.6-flash` pasó de 20s varias veces
+// bajo carga y el bot derivaba a un humano por nada. Dos intentos de 28s dejan
+// el peor caso en ~57s, que es mucho pero sigue siendo mejor que una derivación
+// falsa — y solo ocurre cuando Google está saturado de verdad.
+const llamarGemini = async (url, payload, timeout = 28000) => {
   let ultimo;
   for (let intento = 1; intento <= 2; intento++) {
     try {
