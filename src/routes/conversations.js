@@ -118,6 +118,64 @@ router.post('/:id/resume', verifyToken, async (req, res, next) => {
 // un cambio de manos.
 const sendMessageSchema = Joi.object({ content: Joi.string().min(1).required() });
 
+// DELETE /api/conversations/:id — borra una conversación y su historial.
+//
+// Se borra de verdad, no se marca como inactiva: lo que se quiere quitar de
+// acá son chats de prueba y basura, y dejarlos escondidos en la base solo
+// engaña a quien mire después.
+//
+// El esquema ya deja el rastro limpio, y `PRAGMA foreign_keys = ON` lo hace
+// cumplir: los mensajes y los eventos de derivación caen en cascada, mientras
+// los pedidos y las reservas SOBREVIVEN y solo pierden el vínculo con el chat
+// (ON DELETE SET NULL). Un pedido cobrado no puede desaparecer porque alguien
+// borró una conversación.
+router.delete('/:id', verifyToken, async (req, res, next) => {
+  try {
+    const conversation = await dbGet('SELECT * FROM conversations WHERE id = ?', [req.params.id]);
+    if (!conversation) {
+      return res.status(404).json({ error: 'Conversación no encontrada' });
+    }
+
+    // Se cuenta antes de borrar, para poder decir qué se llevó — que es la
+    // diferencia entre confirmar un borrado y confiar en que salió bien.
+    const cuenta = await dbGet(
+      'SELECT COUNT(*) as n FROM messages WHERE conversation_id = ?', [req.params.id]
+    );
+    const pedidos = await dbGet(
+      'SELECT COUNT(*) as n FROM orders WHERE conversation_id = ?', [req.params.id]
+    );
+
+    await dbRun('DELETE FROM conversations WHERE id = ?', [req.params.id]);
+
+    await dbRun(
+      'INSERT INTO activity_logs (user_id, client_id, action, entity) VALUES (?, ?, ?, ?)',
+      [req.user.id, conversation.client_id, 'DELETE', 'CONVERSATION']
+    );
+
+    logger.info('Conversación borrada', {
+      conversationId: conversation.id,
+      telefono: conversation.end_customer_id,
+      mensajes: cuenta.n,
+      pedidosDesvinculados: pedidos.n
+    });
+
+    // Las otras pantallas abiertas tienen que soltarla, o quedan mostrando un
+    // chat que ya no existe.
+    emitToClient(conversation.client_id, 'conversation:deleted', { conversationId: conversation.id });
+
+    res.json({
+      success: true,
+      data: {
+        conversationId: conversation.id,
+        mensajesBorrados: cuenta.n,
+        pedidosDesvinculados: pedidos.n
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.post('/:id/messages', verifyToken, async (req, res, next) => {
   try {
     const { error, value } = sendMessageSchema.validate(req.body);
@@ -176,127 +234,18 @@ router.post('/:id/messages', verifyToken, async (req, res, next) => {
   }
 });
 
-// POST /api/conversations/incoming — punto de entrada único para CUALQUIER
-// proveedor de mensajería (Twilio/360dialog/Meta directo). El conector real
-// de cada canal (aún por conectar, ver INFRAESTRUCTURA.md) solo necesita
-// traducir su payload a esta forma; toda la lógica de bot/derivación vive
-// aquí una sola vez.
+// La ruta POST /api/conversations/incoming se eliminó a propósito.
 //
-// ⚠️ Sin autenticación de usuario porque no la llama un admin logueado sino
-// el conector del proveedor — cuando se conecte Twilio real, esta ruta debe
-// protegerse verificando la firma de la petición (igual que el webhook de
-// Bold en payments.js), no con verifyToken.
-const incomingSchema = Joi.object({
-  client_id: Joi.number().integer().required(),
-  channel_type: Joi.string().valid('whatsapp', 'instagram', 'messenger').required(),
-  end_customer_id: Joi.string().required(),
-  end_customer_name: Joi.string().allow(''),
-  text: Joi.string().allow(''),
-  imageBase64: Joi.string(),
-  imageMimeType: Joi.string(),
-  audioBase64: Joi.string(),
-  audioMimeType: Joi.string()
-}).or('text', 'imageBase64', 'audioBase64');
-
-router.post('/incoming', async (req, res, next) => {
-  try {
-    const { error, value } = incomingSchema.validate(req.body);
-    if (error) {
-      error.isJoi = true;
-      throw error;
-    }
-
-    // 1. Buscar o crear la conversación
-    let conversation = await dbGet(
-      'SELECT * FROM conversations WHERE client_id = ? AND channel_type = ? AND end_customer_id = ?',
-      [value.client_id, value.channel_type, value.end_customer_id]
-    );
-
-    if (!conversation) {
-      const result = await dbRun(
-        `INSERT INTO conversations (client_id, channel_type, end_customer_id, end_customer_name, mode, last_message_at)
-         VALUES (?, ?, ?, ?, 'bot', CURRENT_TIMESTAMP)`,
-        [value.client_id, value.channel_type, value.end_customer_id, value.end_customer_name || null]
-      );
-      conversation = await dbGet('SELECT * FROM conversations WHERE id = ?', [result.id]);
-    }
-
-    // 2. Guardar el mensaje entrante del cliente final
-    const incomingText = value.text || (value.imageBase64 ? '[imagen]' : '[audio]');
-    await dbRun(
-      'INSERT INTO messages (conversation_id, sender_type, content) VALUES (?, ?, ?)',
-      [conversation.id, 'end_customer', incomingText]
-    );
-    await dbRun(
-      'UPDATE conversations SET last_message_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
-      [conversation.id]
-    );
-    emitToClient(conversation.client_id, 'conversation:new_message', {
-      conversation_id: conversation.id, sender_type: 'end_customer', content: incomingText, created_at: new Date().toISOString()
-    });
-
-    // 3. Si el bot está pausado o en modo humano, no responder automáticamente
-    if (conversation.mode !== 'bot') {
-      logger.info('Mensaje recibido pero el bot no está activo en esta conversación', { conversationId: conversation.id, mode: conversation.mode });
-      return res.json({ success: true, data: { conversationId: conversation.id, botResponded: false, mode: conversation.mode } });
-    }
-
-    // 4. Historial reciente para dar contexto al bot
-    const history = await dbAll(
-      'SELECT sender_type, content FROM messages WHERE conversation_id = ? ORDER BY created_at ASC LIMIT 20',
-      [conversation.id]
-    );
-
-    const { handoff, reply, memoryNote } = await geminiService.generateBotResponse(value.client_id, history.slice(0, -1), {
-      text: value.text,
-      imageBase64: value.imageBase64,
-      imageMimeType: value.imageMimeType,
-      audioBase64: value.audioBase64,
-      audioMimeType: value.audioMimeType
-    }, null, { customerNotes: conversation.customer_notes });
-
-    if (handoff) {
-      await dbRun('UPDATE conversations SET mode = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', ['human', conversation.id]);
-      await dbRun(
-        'INSERT INTO handoff_events (conversation_id, trigger_type, detail) VALUES (?, ?, ?)',
-        [conversation.id, 'auto', handoff]
-      );
-      logger.info('Derivación automática a humano', { conversationId: conversation.id, reason: handoff });
-      emitToClient(conversation.client_id, 'conversation:mode_changed', { conversationId: conversation.id, mode: 'human', reason: handoff });
-      return res.json({ success: true, data: { conversationId: conversation.id, botResponded: false, handoff } });
-    }
-
-    // 5. Despachar, guardar y emitir la respuesta del bot
-    const dispatch = await metaSend.sendText({
-      channelType: conversation.channel_type,
-      to: conversation.end_customer_id,
-      text: reply
-    });
-
-    const botMsg = await dbRun(
-      'INSERT INTO messages (conversation_id, sender_type, content, external_message_id) VALUES (?, ?, ?, ?)',
-      [conversation.id, 'bot', reply, dispatch.externalId || null]
-    );
-    await dbRun('UPDATE conversations SET last_message_at = CURRENT_TIMESTAMP WHERE id = ?', [conversation.id]);
-
-    if (memoryNote) {
-      const notasActualizadas = geminiService.mergeMemoryNote(conversation.customer_notes, memoryNote);
-      await dbRun('UPDATE conversations SET customer_notes = ? WHERE id = ?', [notasActualizadas, conversation.id]);
-    }
-
-    const botMessage = {
-      id: botMsg.id, conversation_id: conversation.id, sender_type: 'bot',
-      content: reply, delivered: dispatch.sent, created_at: new Date().toISOString()
-    };
-    emitToClient(conversation.client_id, 'conversation:new_message', botMessage);
-
-    res.json({
-      success: true,
-      data: { conversationId: conversation.id, botResponded: true, reply, delivered: dispatch.sent }
-    });
-  } catch (error) {
-    next(error);
-  }
-});
+// Era un segundo punto de entrada, SIN autenticación y con una copia vieja de
+// la lógica: no tenía el candado de temas restringidos, ni la autorización del
+// dueño, ni la detección de intención de pago, ni el partido en dos mensajes,
+// ni la memoria al abrir la conversación. Cualquiera que conociera la URL
+// podía conversar con el modelo a costa de la empresa, inyectar mensajes en
+// cualquier client_id y saltarse todas esas reglas.
+//
+// El único camino de entrada es ahora POST /api/webhooks/meta, que verifica la
+// firma X-Hub-Signature-256 antes de tocar nada. Si algún día se conecta otro
+// proveedor de mensajería, su webhook va allí con su propia verificación de
+// firma — no con una ruta abierta.
 
 module.exports = { router, setIO, emitToClient };

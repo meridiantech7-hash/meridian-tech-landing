@@ -394,6 +394,7 @@
             <div style="color:var(--muted);font-size:13px" id="chatCanal"></div>
           </div>
           <div class="acciones" id="chatAcciones"></div>
+          <div class="acciones" id="accBorrar"></div>
         </div>
         <div class="mensajes" id="mensajes">
           <div class="vacio">Toca un chat de la izquierda para verlo.</div>
@@ -727,7 +728,9 @@ HORARIO: martes a domingo, 12pm a 10pm"></textarea>
 
     var detalle = [];
     if (r.party_size) detalle.push(r.party_size + ' personas');
-    if (r.customer_phone) detalle.push(r.customer_phone);
+    // El teléfono también se escapa: lo dicta el cliente por chat y de ahí
+    // entra a la reserva, así que es texto de afuera como cualquier otro.
+    if (r.customer_phone) detalle.push(esc(r.customer_phone));
     if (r.notes) detalle.push(esc(r.notes));
 
     el.innerHTML =
@@ -813,9 +816,50 @@ HORARIO: martes a domingo, 12pm a 10pm"></textarea>
     }).catch(function(e){ avisar(e.message); });
   }
 
+  /* Borrar el chat. Va en dos toques y no con un confirm() del navegador: en
+     una tablet de cocina, con las manos ocupadas, un solo toque mal dado se
+     llevaría el historial de un cliente y no hay cómo devolverlo. El primer
+     toque pide confirmación en el mismo botón; el segundo borra. */
+  function montarBorrar(c){
+    var caja = $('accBorrar');
+    if (!caja) return;
+    caja.innerHTML = '<button class="btn peligro" id="btnBorrar">Borrar chat</button>';
+    $('btnBorrar').onclick = function(){
+      caja.innerHTML =
+        '<button class="btn peligro" id="btnBorrarSi">Sí, borrar</button>' +
+        '<button class="btn" id="btnBorrarNo">No</button>';
+      $('btnBorrarNo').onclick = function(){ montarBorrar(c); };
+      $('btnBorrarSi').onclick = function(){
+        this.disabled = true;
+        api('/conversations/'+c.id, {method:'DELETE'}).then(function(j){
+          var n = (j.data && j.data.mensajesBorrados) || 0;
+          var p = (j.data && j.data.pedidosDesvinculados) || 0;
+          chats = chats.filter(function(x){ return x.id !== c.id; });
+          chatActivo = null;
+          pintarChats();
+          $('chatQuien').textContent = 'Selecciona una conversación';
+          $('chatCanal').textContent = '';
+          $('chatAcciones').innerHTML = '';
+          caja.innerHTML = '';
+          $('mensajes').innerHTML = '<div class="vacio">Toca un chat de la izquierda para verlo.</div>';
+          $('zonaEscribir').innerHTML = '';
+          avisar('Chat borrado con sus ' + n + ' mensajes' +
+            (p ? '. Los ' + p + ' pedidos se conservan, solo pierden el vínculo' : ''));
+        }).catch(function(e){ avisar(e.message); montarBorrar(c); });
+      };
+    };
+  }
+
   function pintarAcciones(){
     var c = chatActivo;
-    if (!c) { $('chatAcciones').innerHTML = ''; $('zonaEscribir').innerHTML = ''; return; }
+    if (!c) {
+      $('chatAcciones').innerHTML = '';
+      $('zonaEscribir').innerHTML = '';
+      if ($('accBorrar')) $('accBorrar').innerHTML = '';
+      return;
+    }
+
+    montarBorrar(c);
 
     if (c.mode === 'bot') {
       $('chatAcciones').innerHTML = '<button class="btn alerta" id="btnPausar">Pausar bot y contestar yo</button>';
@@ -1020,6 +1064,21 @@ HORARIO: martes a domingo, 12pm a 10pm"></textarea>
       avisar(ev.outsideWindow
         ? 'No se pudo entregar: pasaron más de 24h desde el último mensaje del cliente.'
         : 'Un mensaje no se pudo entregar.');
+    });
+    // Si lo borraron desde otra pantalla, esta tiene que soltarlo: si no,
+    // sigue mostrando un chat que ya no existe y al escribir da error.
+    socket.on('conversation:deleted', function(ev){
+      chats = chats.filter(function(x){ return x.id !== ev.conversationId; });
+      if (chatActivo && chatActivo.id === ev.conversationId) {
+        chatActivo = null;
+        $('chatQuien').textContent = 'Selecciona una conversación';
+        $('chatCanal').textContent = '';
+        $('chatAcciones').innerHTML = '';
+        if ($('accBorrar')) $('accBorrar').innerHTML = '';
+        $('mensajes').innerHTML = '<div class="vacio">Este chat se borró desde otra pantalla.</div>';
+        $('zonaEscribir').innerHTML = '';
+      }
+      pintarChats();
     });
   }
 

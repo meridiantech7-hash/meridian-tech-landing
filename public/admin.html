@@ -202,6 +202,20 @@ function toast(msg, type='success'){
   setTimeout(()=> t.className = 'toast', 3000);
 }
 
+/* Escapa antes de meter cualquier texto en innerHTML.
+ *
+ * Hace falta de verdad, no por precaución: los nombres, empresas y teléfonos
+ * de esta tabla los escribe el cliente final. Cuando alguien pide pagar por
+ * WhatsApp, su NOMBRE DE PERFIL entra tal cual al CRM, y el nombre de perfil
+ * lo elige él. Sin escapar, bastaba con llamarse
+ * <img src=x onerror=...> para que ese código corriera acá dentro, con la
+ * sesión del administrador abierta — o sea, con acceso a todo el panel. */
+function esc(s){
+  return String(s===null||s===undefined?'':s).replace(/[&<>"']/g, function(c){
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+  });
+}
+
 function fmtMoney(n, cur='COP'){
   if(n===null||n===undefined) return '$0';
   return new Intl.NumberFormat('es-CO',{style:'currency',currency:cur,maximumFractionDigits:0}).format(n);
@@ -293,10 +307,10 @@ async function loadOverview(){
 
     const rows = historyRes.data.slice(0,8).map(t=>`
       <tr>
-        <td>${t.client_name}</td>
-        <td>${t.plan_name}</td>
+        <td>${esc(t.client_name)}</td>
+        <td>${esc(t.plan_name)}</td>
         <td>${fmtMoney(t.amount, t.currency)}</td>
-        <td><span class="badge badge-${t.status}">${t.status}</span></td>
+        <td><span class="badge badge-${esc(t.status)}">${esc(t.status)}</span></td>
         <td>${fmtDate(t.created_at)}</td>
       </tr>`).join('');
 
@@ -337,18 +351,18 @@ async function loadClients(search=''){
     const res = await api(`/clients?limit=100${qs}`);
     const rows = res.data.map(c=>`
       <tr>
-        <td>${c.name}</td>
-        <td>${c.email}</td>
-        <td>${c.company||'—'}</td>
-        <td>${c.current_plan||'Sin plan'}</td>
+        <td>${esc(c.name)}</td>
+        <td>${esc(c.email)}</td>
+        <td>${esc(c.company||'—')}</td>
+        <td>${esc(c.current_plan||'Sin plan')}</td>
         <td>${c.next_cutoff_date ? fmtDate(c.next_cutoff_date) : '—'}</td>
         <td>${fmtMoney(c.total_paid||0)}</td>
-        <td><span class="badge badge-${c.status}">${c.status}</span></td>
+        <td><span class="badge badge-${esc(c.status)}">${esc(c.status)}</span></td>
         <td><button class="btn-link" onclick="openClientDetail(${c.id})">Ver detalle</button></td>
       </tr>`).join('');
     document.getElementById('clientsTable').innerHTML = res.data.length ? `
       <table><thead><tr><th>Nombre</th><th>Email</th><th>Empresa</th><th>Plan</th><th>Próximo corte</th><th>Total pagado</th><th>Estado</th><th></th></tr></thead>
-      <tbody>${rows}</tbody></table>` : '<div class="empty">'+(search ? 'Sin resultados para "'+search+'"' : 'Aún no hay clientes registrados')+'</div>';
+      <tbody>${rows}</tbody></table>` : '<div class="empty">'+(search ? 'Sin resultados para "'+esc(search)+'"' : 'Aún no hay clientes registrados')+'</div>';
   }catch(err){ toast(err.message,'error'); }
 }
 
@@ -360,24 +374,24 @@ async function openClientDetail(id){
 
     const subsRows = c.subscriptions.map(s=>`
       <tr>
-        <td>${s.plan_name}</td>
+        <td>${esc(s.plan_name)}</td>
         <td>${fmtMoney(s.price, s.currency)}/${s.billing_cycle==='monthly'?'mes':'año'}</td>
-        <td><span class="badge badge-${s.status}">${s.status}</span></td>
+        <td><span class="badge badge-${esc(s.status)}">${esc(s.status)}</span></td>
         <td>${s.renewal_date ? fmtDate(s.renewal_date) : '—'}</td>
       </tr>`).join('') || '<tr><td colspan="4" style="color:var(--muted);">Sin suscripciones</td></tr>';
 
     const actRows = c.recent_activity.map(a=>`
-      <tr><td>${a.action}</td><td>${a.entity||'—'}</td><td>${fmtDate(a.created_at)}</td></tr>
+      <tr><td>${esc(a.action)}</td><td>${esc(a.entity||'—')}</td><td>${fmtDate(a.created_at)}</td></tr>
     `).join('') || '<tr><td colspan="3" style="color:var(--muted);">Sin actividad registrada</td></tr>';
 
     document.getElementById('clientDetailBody').innerHTML = `
       <div class="kv-grid">
-        <div><div class="k">Correo</div><div class="v">${c.email}</div></div>
-        <div><div class="k">Teléfono</div><div class="v">${c.phone||'—'}</div></div>
-        <div><div class="k">Empresa</div><div class="v">${c.company||'—'}</div></div>
-        <div><div class="k">NIT / Cédula</div><div class="v">${c.tax_id||'—'}</div></div>
-        <div><div class="k">Ciudad</div><div class="v">${c.city||'—'}</div></div>
-        <div><div class="k">País</div><div class="v">${c.country||'—'}</div></div>
+        <div><div class="k">Correo</div><div class="v">${esc(c.email)}</div></div>
+        <div><div class="k">Teléfono</div><div class="v">${esc(c.phone||'—')}</div></div>
+        <div><div class="k">Empresa</div><div class="v">${esc(c.company||'—')}</div></div>
+        <div><div class="k">NIT / Cédula</div><div class="v">${esc(c.tax_id||'—')}</div></div>
+        <div><div class="k">Ciudad</div><div class="v">${esc(c.city||'—')}</div></div>
+        <div><div class="k">País</div><div class="v">${esc(c.country||'—')}</div></div>
         <div><div class="k">Cliente desde</div><div class="v">${fmtDate(c.created_at)}</div></div>
         <div><div class="k">Total pagado histórico</div><div class="v">${fmtMoney(c.total_paid)} (${c.total_transactions} pagos)</div></div>
       </div>
@@ -408,11 +422,11 @@ async function loadPlans(){
     const res = await api('/plans');
     const rows = res.data.map(p=>`
       <tr>
-        <td><strong>${p.name}</strong></td>
-        <td>${p.description||'—'}</td>
+        <td><strong>${esc(p.name)}</strong></td>
+        <td>${esc(p.description||'—')}</td>
         <td>${fmtMoney(p.price, p.currency)}/${p.billing_cycle==='monthly'?'mes':'año'}</td>
-        <td>${(p.features||[]).join(', ')}</td>
-        <td><span class="badge badge-${p.status==='active'?'active':'inactive'}">${p.status}</span></td>
+        <td>${esc((p.features||[]).join(', '))}</td>
+        <td><span class="badge badge-${p.status==='active'?'active':'inactive'}">${esc(p.status)}</span></td>
       </tr>`).join('');
     document.getElementById('plansTable').innerHTML = res.data.length ? `
       <table><thead><tr><th>Plan</th><th>Descripción</th><th>Precio</th><th>Características</th><th>Estado</th></tr></thead>
@@ -426,11 +440,11 @@ async function loadHistory(){
     const res = await api('/payments/history/all?limit=100');
     const rows = res.data.map(t=>`
       <tr>
-        <td>${t.client_name}<br><span style="color:var(--muted);font-size:11px;">${t.client_email}</span></td>
-        <td>${t.plan_name}</td>
+        <td>${esc(t.client_name)}<br><span style="color:var(--muted);font-size:11px;">${esc(t.client_email)}</span></td>
+        <td>${esc(t.plan_name)}</td>
         <td>${fmtMoney(t.amount, t.currency)}</td>
-        <td><span class="badge badge-${t.status}">${t.status}</span></td>
-        <td>${t.payment_method||'—'}</td>
+        <td><span class="badge badge-${esc(t.status)}">${esc(t.status)}</span></td>
+        <td>${esc(t.payment_method||'—')}</td>
         <td>${fmtDate(t.created_at)}</td>
       </tr>`).join('');
     document.getElementById('historyTable').innerHTML = res.data.length ? `

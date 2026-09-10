@@ -82,6 +82,16 @@ const limiter = rateLimit({
 });
 app.use('/api/', limiter);
 
+// El login aparte, y mucho más apretado: 100 intentos por ventana alcanzan
+// para probar contraseñas a mano, y acá el premio es la sesión de
+// administrador — con acceso a los datos de todos los clientes. Diez intentos
+// cada quince minutos no estorban a nadie que sepa su clave.
+app.use('/api/auth/login', rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  message: { error: 'Demasiados intentos de inicio de sesión. Espera unos minutos.' }
+}));
+
 // =====================
 // MIDDLEWARES DE LOGGING Y PARSEO
 // =====================
