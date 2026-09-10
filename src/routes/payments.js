@@ -230,42 +230,73 @@ router.get('/history/all', verifyToken, async (req, res, next) => {
 });
 
 // POST /api/payments/webhook/bold - Webhook de confirmación de Bold
+//
+// Formato real (CloudEvents), confirmado contra developers.bold.co — nada que
+// ver con el {order_id, status, payment_method} que había antes, que Bold
+// nunca manda así:
+//
+//   { type: "SALE_APPROVED"|"SALE_REJECTED"|"VOID_APPROVED"|"VOID_REJECTED",
+//     data: { payment_id, merchant_id, amount: {...}, payment_method,
+//             metadata: { reference } } }
+//
+// `data.metadata.reference` es justo el `reference` que mandamos al crear el
+// link (nuestro orderId) — así se encuentra la transacción sin ambigüedad.
 router.post('/webhook/bold', async (req, res, next) => {
   try {
     const signature = req.headers['x-bold-signature'];
     const payload = req.body;
 
-    logger.info('Webhook de Bold recibido', { payload });
+    logger.info('Webhook de Bold recibido', { tipo: payload?.type });
 
-    // Verificar firma si está configurado el secret
-    if (process.env.BOLD_WEBHOOK_SECRET && !boldService.verifyWebhookSignature(payload, signature)) {
+    // Sin secreto configurado NO se puede verificar nada, y este webhook
+    // activa suscripciones: aceptarlo sin firma dejaba que cualquiera hiciera
+    // un POST con un `reference` válido y se activara el plan sin pagar. El
+    // orderId no es secreto — el propio comprador lo ve en la URL de
+    // /pagar/:orderId —, así que el ataque era trivial para un cliente.
+    //
+    // Se rechaza cerrado a propósito: es mejor confirmar un pago a mano que
+    // regalar suscripciones. Si esto aparece en los logs, falta cargar
+    // BOLD_WEBHOOK_SECRET (está en el panel de Bold).
+    if (!process.env.BOLD_WEBHOOK_SECRET) {
+      logger.error('Webhook de Bold rechazado: falta BOLD_WEBHOOK_SECRET, no se puede verificar la firma', {
+        ip: req.ip, tipo: payload?.type
+      });
+      return res.status(503).json({ error: 'Verificación de pagos no configurada' });
+    }
+
+    // La firma se calcula sobre el cuerpo CRUDO (Base64), nunca sobre
+    // JSON.stringify(payload) — el orden de llaves puede no coincidir con lo
+    // que Bold firmó. `req.rawBody` lo captura el verify de express.json.
+    if (!boldService.verifyWebhookSignature(req.rawBody, signature)) {
       logger.warn('Webhook de Bold con firma inválida', { ip: req.ip });
       return res.status(401).json({ error: 'Firma inválida' });
     }
 
-    const { order_id, status, payment_method } = payload;
+    const { type, data } = payload || {};
+    const orderId = data?.metadata?.reference;
 
-    if (!order_id) {
-      return res.status(400).json({ error: 'order_id requerido' });
+    if (!orderId) {
+      logger.warn('Webhook de Bold sin reference en metadata', { tipo: type, paymentId: data?.payment_id });
+      return res.status(400).json({ error: 'data.metadata.reference requerido' });
     }
 
     const transaction = await dbGet(
       'SELECT * FROM transactions WHERE bold_transaction_id = ?',
-      [order_id]
+      [orderId]
     );
 
     if (!transaction) {
-      logger.warn('Webhook para transacción no encontrada', { order_id });
+      logger.warn('Webhook para transacción no encontrada', { orderId });
       return res.status(404).json({ error: 'Transacción no encontrada' });
     }
 
-    const newStatus = status === 'APPROVED' || status === 'approved' ? 'completed'
-      : status === 'REJECTED' || status === 'rejected' ? 'failed'
-      : 'pending';
+    const newStatus = type === 'SALE_APPROVED' ? 'completed'
+      : type === 'SALE_REJECTED' || type === 'VOID_APPROVED' ? 'failed'
+      : transaction.status; // VOID_REJECTED u otro evento que no reconocemos: no tocar el estado
 
     await dbRun(
       'UPDATE transactions SET status = ?, payment_method = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
-      [newStatus, payment_method || null, transaction.id]
+      [newStatus, data?.payment_method || null, transaction.id]
     );
 
     // Si el pago se completó, activar/renovar la suscripción

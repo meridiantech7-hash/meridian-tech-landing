@@ -247,13 +247,13 @@ router.post('/incoming', async (req, res, next) => {
       [conversation.id]
     );
 
-    const { handoff, reply } = await geminiService.generateBotResponse(value.client_id, history.slice(0, -1), {
+    const { handoff, reply, memoryNote } = await geminiService.generateBotResponse(value.client_id, history.slice(0, -1), {
       text: value.text,
       imageBase64: value.imageBase64,
       imageMimeType: value.imageMimeType,
       audioBase64: value.audioBase64,
       audioMimeType: value.audioMimeType
-    });
+    }, null, { customerNotes: conversation.customer_notes });
 
     if (handoff) {
       await dbRun('UPDATE conversations SET mode = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', ['human', conversation.id]);
@@ -278,6 +278,12 @@ router.post('/incoming', async (req, res, next) => {
       [conversation.id, 'bot', reply, dispatch.externalId || null]
     );
     await dbRun('UPDATE conversations SET last_message_at = CURRENT_TIMESTAMP WHERE id = ?', [conversation.id]);
+
+    if (memoryNote) {
+      const notasActualizadas = geminiService.mergeMemoryNote(conversation.customer_notes, memoryNote);
+      await dbRun('UPDATE conversations SET customer_notes = ? WHERE id = ?', [notasActualizadas, conversation.id]);
+    }
+
     const botMessage = {
       id: botMsg.id, conversation_id: conversation.id, sender_type: 'bot',
       content: reply, delivered: dispatch.sent, created_at: new Date().toISOString()

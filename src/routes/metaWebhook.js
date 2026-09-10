@@ -6,6 +6,7 @@ const metaSend = require('../services/metaSend');
 const { emitToClient } = require('./conversations');
 const { createOrder } = require('./orders');
 const ventaService = require('../services/ventaService');
+const ownerService = require('../services/ownerService');
 const logger = require('../utils/logger');
 
 const router = express.Router();
@@ -181,6 +182,71 @@ async function processMessage(clientId, msg) {
     return;
   }
 
+  // Candado de temas restringidos y atajos del dueño — se revisa ANTES que
+  // todo lo demás, con lo que ya tenemos en `config` (una sola lectura, sin
+  // IA): inventario, estados de cuenta y de reservas jamás los responde el
+  // bot por cuenta propia, y los pedidos/reservas de hoy se le contestan al
+  // dueño con una consulta directa a la base, no con la IA adivinando cifras.
+  const config = await geminiService.getBotConfig(clientId);
+  const esDueno = ownerService.esDueno(config, msg.end_customer_id);
+
+  // Los rechazos fijos son de capa A (los negocios de nuestros clientes):
+  // existen para que el bot de un restaurante no suelte su inventario ni sus
+  // ventas a cualquiera que escriba. En la capa B — el bot de ventas de
+  // MERIDIANTECH — no hay datos de nadie que proteger, y esas mismas palabras
+  // son preguntas de compra: "¿me da reportes de ventas?", "¿maneja
+  // inventario?", "¿puedo cambiar los precios desde WhatsApp?". Rechazarlas
+  // mata justo la conversación que el prompt consultivo está tratando de
+  // llevar hasta el cierre. Así que en el cliente interno estas preguntas
+  // siguen su curso normal hacia la IA; los atajos del dueño se conservan.
+  const cliente = await dbGet('SELECT is_internal FROM clients WHERE id = ?', [clientId]);
+  const esClienteInterno = !!cliente?.is_internal;
+
+  // Cambiar menú o precios por WhatsApp: SOLO el dueño autorizado puede
+  // pedirlo, y ahí sí se ejecuta de una — cualquier otro número lo tiene
+  // bloqueado de forma fija, sin excepción.
+  if (ownerService.esSolicitudDeEdicion(msg.text)) {
+    if (esDueno) {
+      const cambio = await ownerService.aplicarCambioMenu(clientId, config, msg.text);
+      if (cambio.ok) {
+        await geminiService.upsertBotConfig(clientId, { knowledge_base: cambio.nuevoConocimiento });
+        logger.info('El dueño actualizó el menú/precios por WhatsApp', { conversationId: conversation.id, resumen: cambio.resumen });
+        await responderDirecto(clientId, conversation, msg, `Listo ✅ ${cambio.resumen}`);
+      } else {
+        await responderDirecto(clientId, conversation, msg, cambio.mensaje);
+      }
+      return;
+    }
+
+    if (!esClienteInterno) {
+      logger.info('Solicitud de edición de menú/precios rechazada: no es el dueño', { conversationId: conversation.id });
+      await responderDirecto(clientId, conversation, msg, ownerService.MENSAJE_EDICION_NO_AUTORIZADA);
+      return;
+    }
+    // Capa B: es un prospecto preguntando por la función, no alguien
+    // intentando editar un menú. Sigue de largo hacia la IA.
+  }
+
+  if (esDueno) {
+    if (ownerService.esConsultaPedidos(msg.text)) {
+      const resumen = await ownerService.resumenPedidosHoy(clientId);
+      await responderDirecto(clientId, conversation, msg, resumen);
+      return;
+    }
+    if (ownerService.esConsultaReservas(msg.text)) {
+      const resumen = await ownerService.resumenReservasHoy(clientId);
+      await responderDirecto(clientId, conversation, msg, resumen);
+      return;
+    }
+  } else if (!esClienteInterno) {
+    const temaRestringido = ownerService.esTemaRestringido(msg.text);
+    if (temaRestringido) {
+      logger.info('Tema restringido rechazado sin IA', { conversationId: conversation.id, tema: temaRestringido });
+      await responderDirecto(clientId, conversation, msg, ownerService.MENSAJE_NO_AUTORIZADO);
+      return;
+    }
+  }
+
   const history = await dbAll(
     'SELECT sender_type, content FROM messages WHERE conversation_id = ? ORDER BY created_at ASC LIMIT 20',
     [conversation.id]
@@ -238,10 +304,12 @@ async function processMessage(clientId, msg) {
     incoming.text = shownText;
   }
 
-  const { handoff, reply } = await geminiService.generateBotResponse(
+  const { handoff, reply, memoryNote } = await geminiService.generateBotResponse(
     clientId,
     history.slice(0, -1),
-    incoming
+    incoming,
+    null,
+    { customerNotes: conversation.customer_notes }
   );
 
   if (handoff) {
@@ -338,10 +406,45 @@ async function processMessage(clientId, msg) {
     conversationId: conversation.id, canal: msg.channel_type, entregado: dispatch.sent
   });
 
+  // Memoria del cliente: si el modelo reportó un dato nuevo en esta misma
+  // respuesta, se guarda para que la próxima vez (aunque se salga de la
+  // ventana de mensajes recientes) el bot lo siga sabiendo.
+  if (memoryNote) {
+    const notasActualizadas = geminiService.mergeMemoryNote(conversation.customer_notes, memoryNote);
+    await dbRun('UPDATE conversations SET customer_notes = ? WHERE id = ?', [notasActualizadas, conversation.id]);
+    logger.info('Memoria del cliente actualizada', { conversationId: conversation.id, nota: memoryNote });
+  }
+
   // Después de responder, se revisa si en la conversación quedó un pedido.
   // Va al final y sin await del cliente final a propósito: si esto falla o
   // tarda, el cliente ya recibió su respuesta.
   await syncOrderFromConversation(clientId, conversation, history, incoming, msg);
+}
+
+/**
+ * Manda un texto fijo (no lo escribe la IA), lo guarda y lo emite en vivo —
+ * para el candado de temas restringidos y los atajos de consulta del dueño
+ * (pedidos/reservas de hoy), donde la respuesta ya se armó con datos exactos
+ * de la base y no tiene sentido pagar por que un modelo la redacte.
+ */
+async function responderDirecto(clientId, conversation, msg, texto) {
+  const envio = await metaSend.sendText({
+    channelType: msg.channel_type,
+    to: msg.end_customer_id,
+    text: texto,
+    phoneNumberId: msg.phone_number_id
+  });
+
+  const guardado = await dbRun(
+    'INSERT INTO messages (conversation_id, sender_type, content, external_message_id) VALUES (?, ?, ?, ?)',
+    [conversation.id, 'bot', texto, envio.externalId || null]
+  );
+  await dbRun('UPDATE conversations SET last_message_at = CURRENT_TIMESTAMP WHERE id = ?', [conversation.id]);
+
+  emitToClient(clientId, 'conversation:new_message', {
+    id: guardado.id, conversation_id: conversation.id, sender_type: 'bot',
+    content: texto, delivered: envio.sent, created_at: new Date().toISOString()
+  });
 }
 
 /**

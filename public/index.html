@@ -560,6 +560,9 @@ body.settled .wm-glow,body.settled .hero-b{
 }
 .foot-soc a:hover{color:var(--white);border-color:var(--mut);background:rgba(255,255,255,.06);}
 .foot-soc svg{width:13px;height:13px;flex:0 0 auto;}
+/* El pie va en versalitas, pero una dirección de correo en mayúsculas se lee
+   mal y parece un grito: esta conserva su forma original. */
+.foot-mail{text-transform:none;letter-spacing:.03em;}
 
 /* ═══ RESPONSIVE ═══ */
 @media (max-width:960px){
@@ -816,14 +819,14 @@ body.settled .wm-glow,body.settled .hero-b{
       <div class="pl-c">
         <p class="pl-t">Básico</p>
         <p class="pl-n">Responde</p>
-        <div class="pl-p"><b data-m="495000" data-y="5049000">$495.000</b><span class="pl-per">COP / mes</span></div>
-        <p class="pl-eq" hidden>Equivale a $420.750 al mes</p>
-        <p class="pl-imp">Implementación única <b>$850.000</b></p>
+        <div class="pl-p"><b data-m="1500000" data-y="15300000">$1.500.000</b><span class="pl-per">COP / mes</span></div>
+        <p class="pl-eq" hidden>Equivale a $1.275.000 al mes</p>
+        <p class="pl-imp">Implementación única <b>$1.275.000</b></p>
         <ul class="pl-l">
           <li><span>Mensajes / mes</span><b>30.000</b></li>
           <li><span>Conversaciones aprox.</span><b>2.500</b></li>
           <li><span>Excedente por mensaje</span><b>$50</b></li>
-          <li><span>Llamadas</span><b>No incluidas</b></li>
+          <li><span>Llamadas por WhatsApp</span><b>No incluidas</b></li>
           <li><span>Tablets incluidas</span><b>1</b></li>
         </ul>
         <a class="btn btn-o" data-wa href="https://wa.me/573142162323?text=Hola%2C%20Meridian.%20Quiero%20conocer%20c%C3%B3mo%20pueden%20ayudarme%20a%20automatizar%20y%20transformar%20los%20procesos%20de%20mi%20empresa.%20Me%20gustar%C3%ADa%20recibir%20m%C3%A1s%20informaci%C3%B3n%20y%20agendar%20una%20conversaci%C3%B3n." target="_blank" rel="noopener noreferrer">Hablar de este plan</a>
@@ -833,14 +836,14 @@ body.settled .wm-glow,body.settled .hero-b{
       <div class="pl-c hi">
         <p class="pl-t">Pro</p>
         <p class="pl-n">Controla</p>
-        <div class="pl-p"><b data-m="995000" data-y="10149000">$995.000</b><span class="pl-per">COP / mes</span></div>
-        <p class="pl-eq" hidden>Equivale a $845.750 al mes</p>
-        <p class="pl-imp">Implementación única <b>$1.100.000</b></p>
+        <div class="pl-p"><b data-m="2750000" data-y="28050000">$2.750.000</b><span class="pl-per">COP / mes</span></div>
+        <p class="pl-eq" hidden>Equivale a $2.337.500 al mes</p>
+        <p class="pl-imp">Implementación única <b>$1.275.000</b></p>
         <ul class="pl-l">
           <li><span>Mensajes / mes</span><b>60.000</b></li>
           <li><span>Conversaciones aprox.</span><b>5.000</b></li>
           <li><span>Excedente por mensaje</span><b>$50</b></li>
-          <li><span>Minutos de llamada / mes</span><b>50</b></li>
+          <li><span>Minutos de llamada por WhatsApp / mes</span><b>400</b></li>
           <li><span>Excedente por minuto</span><b>$800</b></li>
           <li><span>Tablets incluidas</span><b>1</b></li>
         </ul>
@@ -851,14 +854,14 @@ body.settled .wm-glow,body.settled .hero-b{
       <div class="pl-c">
         <p class="pl-t">Premium</p>
         <p class="pl-n">Crece</p>
-        <div class="pl-p"><b data-m="1995000" data-y="20349000">$1.995.000</b><span class="pl-per">COP / mes</span></div>
-        <p class="pl-eq" hidden>Equivale a $1.695.750 al mes</p>
-        <p class="pl-imp">Implementación única <b>$1.800.000</b></p>
+        <div class="pl-p"><b data-m="5200000" data-y="53040000">$5.200.000</b><span class="pl-per">COP / mes</span></div>
+        <p class="pl-eq" hidden>Equivale a $4.420.000 al mes</p>
+        <p class="pl-imp">Implementación única <b>$2.705.000</b></p>
         <ul class="pl-l">
           <li><span>Mensajes / mes</span><b>120.000</b></li>
           <li><span>Conversaciones aprox.</span><b>10.000</b></li>
           <li><span>Excedente por mensaje</span><b>$50</b></li>
-          <li><span>Minutos de llamada / mes</span><b>500</b></li>
+          <li><span>Minutos de llamada por WhatsApp / mes</span><b>1.000</b></li>
           <li><span>Excedente por minuto</span><b>$800</b></li>
           <li><span>Tablets incluidas</span><b>2</b></li>
         </ul>
@@ -867,7 +870,7 @@ body.settled .wm-glow,body.settled .hero-b{
       </div>
 
     </div>
-    <p class="pl-note rv d2">Valores en pesos colombianos. Una conversación equivale a unos 12 mensajes. Cada proyecto se ajusta al alcance real: los planes son el punto de partida, no el techo.</p>
+    <p class="pl-note rv d2">Valores en pesos colombianos. Una conversación equivale a unos 12 mensajes. Los minutos son de llamadas por WhatsApp, no de telefonía tradicional: el cliente llama desde la app y contesta el asistente. El paquete de minutos incluido se renueva cada mes y no se acumula; pasado ese tope se cobra el excedente por minuto. Cada proyecto se ajusta al alcance real: los planes son el punto de partida, no el techo.</p>
   </div>
 </section>
 
@@ -975,6 +978,12 @@ body.settled .wm-glow,body.settled .hero-b{
         <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
           <path d="M22 12.06C22 6.5 17.52 2 12 2S2 6.5 2 12.06c0 5.02 3.66 9.18 8.44 9.94v-7.03H7.9v-2.91h2.54V9.85c0-2.52 1.49-3.91 3.77-3.91 1.09 0 2.23.2 2.23.2v2.46h-1.26c-1.24 0-1.63.78-1.63 1.57v1.89h2.78l-.44 2.91h-2.34V22c4.78-.76 8.44-4.92 8.44-9.94z"/>
         </svg>Facebook
+      </a>
+      <a class="foot-mail" href="mailto:hola@meridiantech.app">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+          <rect x="2.6" y="4.8" width="18.8" height="14.4" rx="2.4"/>
+          <path d="M3.4 6.6l8.6 5.9 8.6-5.9"/>
+        </svg>hola@meridiantech.app
       </a>
     </span>
     <span>Inteligencia artificial · Software · Automatización</span>
