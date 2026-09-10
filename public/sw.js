@@ -10,8 +10,12 @@
  *     al instante y muestre un mensaje claro si no hay señal
  */
 
-const CACHE = 'meridian-terminal-v1';
+const CACHE = 'meridian-terminal-v2';
 const ARMAZON = ['/tablet', '/manifest.json', '/icon-192.png', '/icon-512.png'];
+
+/* Los íconos y el manifiesto no cambian casi nunca: para esos sí conviene la
+   caché primero, que abre al instante. El HTML de la app no. */
+const esArmazonEstable = (ruta) => /\.(png|ico|webmanifest)$|^\/manifest\.json$/.test(ruta);
 
 self.addEventListener('install', (e) => {
   e.waitUntil(
@@ -39,19 +43,40 @@ self.addEventListener('fetch', (e) => {
   if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/socket.io/')) return;
   if (e.request.method !== 'GET' || url.origin !== self.location.origin) return;
 
-  // Armazón: se sirve de caché al instante y se refresca por detrás, así una
-  // versión nueva de la app entra sola en la siguiente apertura.
-  e.respondWith(
-    caches.match(e.request).then((cacheada) => {
-      const red = fetch(e.request).then((resp) => {
+  // Íconos y manifiesto: caché primero, que abren al instante y no cambian.
+  if (esArmazonEstable(url.pathname)) {
+    e.respondWith(
+      caches.match(e.request).then((cacheada) => cacheada || fetch(e.request).then((resp) => {
         if (resp && resp.ok) {
           const copia = resp.clone();
           caches.open(CACHE).then((c) => c.put(e.request, copia));
         }
         return resp;
-      }).catch(() => cacheada);
+      }))
+    );
+    return;
+  }
 
-      return cacheada || red;
-    })
+  // El HTML de la app: RED PRIMERO, con la caché solo como respaldo si no hay
+  // señal.
+  //
+  // Antes era al revés (caché primero, refrescar por detrás), y eso escondía
+  // cada versión nueva: al abrir la app se veía la vieja, y la nueva entraba
+  // solo en la apertura siguiente. Así fue como la pestaña de Reservas quedó
+  // invisible en la tablet aunque ya estaba desplegada — el equipo tenía
+  // guardado el armazón de antes de que existiera.
+  //
+  // El costo es unas décimas de segundo al abrir con red. La ganancia es que
+  // lo que se despliega es lo que se ve.
+  e.respondWith(
+    fetch(e.request)
+      .then((resp) => {
+        if (resp && resp.ok) {
+          const copia = resp.clone();
+          caches.open(CACHE).then((c) => c.put(e.request, copia));
+        }
+        return resp;
+      })
+      .catch(() => caches.match(e.request))
   );
 });

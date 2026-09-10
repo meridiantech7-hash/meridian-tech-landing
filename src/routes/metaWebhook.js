@@ -150,12 +150,47 @@ async function processMessage(clientId, msg) {
   );
 
   if (!conversation) {
+    // La memoria arranca con lo que ya sabemos de esta persona, sin gastar una
+    // llamada de IA: nunca debería tratar como desconocido a alguien con quien
+    // ya se habló.
+    //
+    // Dos fuentes gratis:
+    //  - Lo aprendido en otro canal. Un mismo dueño escribe por WhatsApp y
+    //    luego por Instagram; para él es la misma conversación con el mismo
+    //    negocio, y volver a preguntarle todo delata que no hay nadie
+    //    recordando.
+    //  - Su ficha en el CRM, si ya es prospecto o cliente.
+    const memoriaPrevia = await dbGet(
+      `SELECT customer_notes FROM conversations
+       WHERE end_customer_id = ? AND customer_notes IS NOT NULL AND customer_notes != ''
+       ORDER BY last_message_at DESC LIMIT 1`,
+      [msg.end_customer_id]
+    );
+    const fichaCrm = await dbGet(
+      'SELECT name, company, status FROM clients WHERE phone = ?',
+      [msg.end_customer_id]
+    );
+
+    const semillas = [];
+    if (memoriaPrevia?.customer_notes) semillas.push(memoriaPrevia.customer_notes);
+    if (msg.end_customer_name) semillas.push(`Se llama ${msg.end_customer_name}`);
+    if (fichaCrm?.company) semillas.push(`Su negocio es ${fichaCrm.company}`);
+    if (fichaCrm?.status === 'active') semillas.push('Ya es cliente activo de MeridianTech');
+    else if (fichaCrm?.status === 'prospect') semillas.push('Ya pidió cobro antes y no completó el pago');
+
     const created = await dbRun(
-      `INSERT INTO conversations (client_id, channel_type, end_customer_id, end_customer_name, mode, last_message_at)
-       VALUES (?, ?, ?, ?, 'bot', CURRENT_TIMESTAMP)`,
-      [clientId, msg.channel_type, msg.end_customer_id, msg.end_customer_name]
+      `INSERT INTO conversations (client_id, channel_type, end_customer_id, end_customer_name, mode, customer_notes, last_message_at)
+       VALUES (?, ?, ?, ?, 'bot', ?, CURRENT_TIMESTAMP)`,
+      [clientId, msg.channel_type, msg.end_customer_id, msg.end_customer_name,
+       semillas.length ? semillas.join('\n') : null]
     );
     conversation = await dbGet('SELECT * FROM conversations WHERE id = ?', [created.id]);
+
+    if (semillas.length) {
+      logger.info('Conversación nueva abierta con memoria previa', {
+        conversationId: conversation.id, notas: semillas.length
+      });
+    }
   }
 
   const shownText = msg.text || (msg.mediaType === 'image' ? '[imagen]' : msg.mediaType === 'audio' ? '[audio]' : '[mensaje]');
