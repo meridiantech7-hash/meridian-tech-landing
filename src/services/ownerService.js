@@ -46,6 +46,28 @@ const esTemaRestringido = (texto) => {
 const MENSAJE_NO_AUTORIZADO =
   'Uy, esa información no la puedo compartir por este medio — no estamos autorizados para responder este tipo de cosas por aquí. Si necesitas algo puntual, mejor hablas directo con el encargado del negocio 🙌';
 
+/**
+ * ¿Están pidiendo CAMBIAR el menú o los precios (no solo preguntar por ellos)?
+ *
+ * Esto se rechaza para TODOS, incluido el dueño autorizado — no es lo mismo
+ * que inventario/reservas/pedidos, donde al dueño sí se le abre la consulta.
+ * Mutar el catálogo con texto libre por WhatsApp es exactamente el tipo de
+ * error caro que un "creo que entendí bien" no debería poder causar; para eso
+ * ya existe una pestaña dedicada en la tablet ("Menú e info").
+ *
+ * A propósito NO incluye "plan": "quiero cambiar de plan" es un cliente
+ * pidiendo cambiar SU suscripción, una conversación legítima que el asistente
+ * sí debe poder tener — muy distinto de editar el catálogo de planes.
+ */
+const esSolicitudDeEdicion = (texto) => {
+  const t = normalizar(texto);
+  if (!t) return false;
+  return /\b(cambiar?|actualizar?|modificar?|edita[r]?|sub[ei][r]?)\b[\s\S]{0,25}\b(menu|precio|precios)\b/.test(t);
+};
+
+const MENSAJE_USA_TABLET =
+  'Los cambios de menú, precios o planes se hacen directo desde la tablet del negocio, en "Menú e info" — así queda todo controlado y sin errores. Por aquí no los puedo modificar 🙌';
+
 /** ¿Pregunta por los pedidos/órdenes de hoy? */
 const esConsultaPedidos = (texto) => {
   const t = normalizar(texto);
@@ -108,6 +130,8 @@ module.exports = {
   esDueno,
   esTemaRestringido,
   MENSAJE_NO_AUTORIZADO,
+  esSolicitudDeEdicion,
+  MENSAJE_USA_TABLET,
   esConsultaPedidos,
   esConsultaReservas,
   resumenPedidosHoy,

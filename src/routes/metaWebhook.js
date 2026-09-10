@@ -190,6 +190,15 @@ async function processMessage(clientId, msg) {
   const config = await geminiService.getBotConfig(clientId);
   const esDueno = ownerService.esDueno(config, msg.end_customer_id);
 
+  // Cambiar menú, precios o plan por WhatsApp se rechaza para TODOS, dueño
+  // incluido: para eso existe la pestaña "Menú e info" de la tablet, que sí
+  // guarda el cambio de forma controlada. Por texto libre no.
+  if (ownerService.esSolicitudDeEdicion(msg.text)) {
+    logger.info('Solicitud de edición de menú/precios/plan redirigida a la tablet', { conversationId: conversation.id, esDueno });
+    await responderDirecto(clientId, conversation, msg, ownerService.MENSAJE_USA_TABLET);
+    return;
+  }
+
   if (!esDueno) {
     const temaRestringido = ownerService.esTemaRestringido(msg.text);
     if (temaRestringido) {
