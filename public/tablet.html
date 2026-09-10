@@ -117,50 +117,50 @@
   /* ---------- Chats ---------- */
   .chats{display:flex;width:100%;min-height:0}
   .lista{
-    flex:0 0 320px;border-right:1px solid var(--line);overflow-y:auto;
-    background:var(--surface);
+    flex:0 0 340px;border-right:1px solid #222d34;overflow-y:auto;
+    background:#111b21;
   }
-  /* Filas de la lista, como en Mensajes de iOS: foto redonda, nombre en
-     negrita, una sola línea de anticipo y la hora arriba a la derecha. La
-     línea divisoria arranca después de la foto, no de borde a borde. */
+  /* Filas como la lista de chats de WhatsApp: foto de 49px, nombre a 17px,
+     una sola línea de anticipo, hora arriba a la derecha, y la divisoria
+     arrancando después de la foto — no de borde a borde. */
   .chat-item{
-    display:grid;grid-template-columns:auto 1fr;gap:12px;
-    width:100%;text-align:left;padding:11px 16px;min-height:70px;
-    position:relative;align-items:center;
+    display:grid;grid-template-columns:auto 1fr;gap:13px;
+    width:100%;text-align:left;padding:10px 14px;min-height:72px;
+    position:relative;align-items:center;color:#e9edef;
   }
   .chat-item::after{
-    content:"";position:absolute;left:72px;right:0;bottom:0;
-    height:1px;background:var(--line);
+    content:"";position:absolute;left:76px;right:0;bottom:0;
+    height:1px;background:#222d34;
   }
-  .chat-item[aria-current="true"]{background:var(--surface-2)}
+  .chat-item[aria-current="true"]{background:#2a3942}
   .chat-item .foto{
-    width:44px;height:44px;border-radius:50%;display:grid;place-items:center;
-    font-size:16px;font-weight:600;color:#fff;letter-spacing:.5px;
-    background:linear-gradient(180deg,#5b6b80,#3d4a5c);
+    width:49px;height:49px;border-radius:50%;display:grid;place-items:center;
+    font-size:17px;font-weight:500;color:#cfd9de;letter-spacing:.5px;
+    background:#6a7f8c;
   }
-  .chat-item .foto.humano{background:linear-gradient(180deg,#3ddc78,#23a558)}
+  .chat-item .foto.humano{background:#00a884;color:#0b141a}
   .chat-item .cuerpo{min-width:0}
   .chat-item .n1{display:flex;align-items:baseline;gap:8px}
-  .chat-item .nom{font-weight:600;font-size:16px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .chat-item .cuando{margin-left:auto;font-size:12.5px;color:var(--muted);flex:none}
+  .chat-item .nom{
+    font-weight:500;font-size:17px;overflow:hidden;
+    text-overflow:ellipsis;white-space:nowrap;
+  }
+  .chat-item .cuando{margin-left:auto;font-size:12px;color:#8696a0;flex:none}
   .chat-item .prev{
-    color:var(--muted);font-size:14.5px;margin-top:1px;
+    color:#8696a0;font-size:14.5px;margin-top:2px;
     overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
   }
-  .chat-item .prev b{color:#4c9aff;font-weight:600}
-  .chat-item .prev b.humano{color:var(--listo)}
+  .chat-item .prev b{color:#8696a0;font-weight:400}
+  .chat-item .prev b.humano{color:#00a884;font-weight:500}
 
   .conver{flex:1;display:flex;flex-direction:column;min-width:0}
-  /* Cabecera centrada y traslúcida, como la de una conversación en iOS. */
+  /* Cabecera de conversación de WhatsApp: foto, nombre, y debajo el estado. */
   .conver-cab{
-    display:flex;align-items:center;gap:12px;padding:10px 16px;
-    border-bottom:1px solid var(--line);flex:none;
-    background:rgba(26,32,41,.82);
-    -webkit-backdrop-filter:saturate(180%) blur(20px);
-    backdrop-filter:saturate(180%) blur(20px);
+    display:flex;align-items:center;gap:12px;padding:9px 16px;flex:none;
+    background:#202c33;color:#e9edef;
   }
-  .conver-cab .centro{flex:1;text-align:center;min-width:0}
-  .conver-cab .quien{font-weight:600;font-size:16px}
+  .conver-cab .centro{flex:1;min-width:0}
+  .conver-cab .quien{font-weight:500;font-size:16.5px}
   .conver-cab .acciones{display:flex;gap:9px;flex:none}
   .btn{
     padding:11px 16px;border-radius:10px;font-weight:700;min-height:48px;
@@ -173,102 +173,115 @@
   .btn.peligro{background:transparent;color:var(--peligro);border-color:var(--peligro)}
   .btn:disabled{opacity:.45}
 
-  /* ---------- Mensajería: lenguaje de iMessage ----------
-     Se adopta a propósito la gramática de Mensajes de iOS, que el dueño de un
-     negocio ya sabe leer sin que nadie le explique: lo que le llega a la
-     izquierda en gris, lo que sale del negocio a la derecha, burbujas con cola
-     solo al final de cada tanda, y la hora como separador centrado en vez de
-     una etiqueta pegada a cada mensaje.
+  /* ---------- Mensajería: WhatsApp en iOS ----------
+     La conversación adopta el lenguaje de WhatsApp en iPhone, que es donde el
+     dueño de un negocio pasa el día: burbuja verde oscura a la derecha, gris
+     azulada a la izquierda, radio corto de 7,5px, la cola en el PRIMER mensaje
+     de cada tanda (al contrario de iMessage, que la pone en el último), y la
+     hora DENTRO de la burbuja, abajo a la derecha, con los dos chulos.
 
-     Y se aprovecha una convención que iOS ya trae: azul es su mensajería
-     propia, verde es un SMS. Acá el AZUL es Meri contestando y el VERDE es
-     una persona del equipo que tomó el chat. Así, de un vistazo desde el otro
-     lado de la cocina, se ve quién está atendiendo — que es justo la pregunta
-     que uno le hace a esta pantalla. */
+     La paleta se limita a esta vista: órdenes, reservas y menú conservan la
+     suya, que ya está pensada para leerse de lejos en una cocina.
+
+     WhatsApp tiene un solo color para lo que sale, así que la distinción entre
+     Meri y una persona del equipo va en la etiqueta de cada tanda, no en el
+     color — cambiarlo rompería justo el parecido que se busca. */
+  #vista-chats{
+    --wa-fondo:#0b141a; --wa-entra:#202c33; --wa-sale:#005c4b;
+    --wa-texto:#e9edef; --wa-tenue:#8696a0; --wa-chulo:#53bdeb;
+    --wa-barra:#202c33; --wa-campo:#2a3942; --wa-verde:#00a884;
+  }
   .mensajes{
-    flex:1;overflow-y:auto;padding:14px 18px 22px;
+    flex:1;overflow-y:auto;overflow-x:hidden;
+    padding:12px 16px 18px;
     display:flex;flex-direction:column;
-    background:var(--bg);
-    /* Las colas de las burbujas se dibujan fuera del ancho de la burbuja
-       (right:-19px); sin esto aparecía una barra horizontal en la conversación. */
-    overflow-x:hidden;
+    background:var(--wa-fondo);
   }
+  /* Sello de fecha centrado, como la pastilla de WhatsApp. */
   .sello{
-    align-self:center;margin:16px 0 10px;font-size:12px;color:var(--muted);
-    letter-spacing:.2px;
+    align-self:center;margin:14px 0 10px;font-size:12.5px;
+    color:var(--wa-tenue);background:var(--wa-entra);
+    padding:5px 12px;border-radius:8px;text-transform:uppercase;
+    letter-spacing:.4px;
   }
-  .sello b{color:var(--text);font-weight:600}
+  .sello b{color:var(--wa-texto);font-weight:600}
   .quien-habla{
-    font-size:11px;color:var(--muted);margin:8px 0 3px;padding:0 4px;
-    letter-spacing:.3px;
+    font-size:11.5px;color:var(--wa-tenue);margin:9px 0 2px;padding:0 3px;
   }
   .quien-habla.der{align-self:flex-end}
   .quien-habla.izq{align-self:flex-start}
 
   .burbuja{
-    position:relative;max-width:72%;padding:9px 15px;font-size:15.5px;
-    line-height:1.35;word-wrap:break-word;white-space:pre-wrap;
-    border-radius:19px;margin-top:2px;
+    position:relative;max-width:76%;min-width:96px;
+    padding:6px 9px 7px;font-size:15.6px;line-height:1.33;
+    border-radius:7.5px;margin-top:2px;
+    word-wrap:break-word;white-space:pre-wrap;color:var(--wa-texto);
+    box-shadow:0 1px .5px rgba(11,20,26,.35);
     -webkit-user-select:text;user-select:text;
   }
-  .burbuja.izq{align-self:flex-start;background:#26262a;color:var(--text)}
-  .burbuja.der{align-self:flex-end;color:#fff}
-  .burbuja.der.bot{background:#0a84ff}
-  .burbuja.der.dueno{background:#30d158;color:#04150b}
+  .burbuja.izq{align-self:flex-start;background:var(--wa-entra)}
+  .burbuja.der{align-self:flex-end;background:var(--wa-sale)}
 
-  /* Radios apretados dentro de una misma tanda: es lo que hace que tres
-     mensajes seguidos se lean como un bloque y no como tres cosas sueltas. */
-  .burbuja.izq.sigue{border-top-left-radius:7px}
-  .burbuja.izq.antes{border-bottom-left-radius:7px}
-  .burbuja.der.sigue{border-top-right-radius:7px}
-  .burbuja.der.antes{border-bottom-right-radius:7px}
+  /* La hora va dentro, y el texto reserva el hueco para que nunca se le monte
+     encima — es el mismo truco de WhatsApp. */
+  .burbuja .txt{display:block}
+  .burbuja.izq .txt{padding-right:48px}
+  .burbuja.der .txt{padding-right:66px}
+  .burbuja .hora{
+    position:absolute;right:9px;bottom:5px;
+    font-size:11px;line-height:1;color:rgba(233,237,239,.6);
+    display:flex;align-items:center;gap:3px;white-space:nowrap;
+  }
+  .burbuja .hora svg{width:15px;height:15px;fill:currentColor;margin-bottom:-1px}
+  .burbuja .hora.leido{color:var(--wa-chulo)}
+  .burbuja .hora.falla{color:#ff8a8a}
 
-  /* La cola, solo en el último de cada tanda. El segundo pseudoelemento tapa
-     con el color del fondo para dejar la curva cóncava de iOS. */
-  .burbuja.fin::before,
-  .burbuja.fin::after{content:"";position:absolute;bottom:0;height:19px}
-  .burbuja.der.fin::before{
-    right:-7px;width:20px;border-bottom-left-radius:17px 14px;
+  /* La cola: en el PRIMER mensaje de cada tanda, en la esquina de arriba.
+     El segundo pseudoelemento tapa con el fondo del chat para dejar la curva
+     cóncava. */
+  .burbuja.primera::before,
+  .burbuja.primera::after{content:"";position:absolute;top:0;height:17px}
+  .burbuja.der.primera{border-top-right-radius:0}
+  .burbuja.der.primera::before{
+    right:-7px;width:20px;background:var(--wa-sale);
+    border-top-left-radius:17px 14px;
   }
-  .burbuja.der.bot.fin::before{background:#0a84ff}
-  .burbuja.der.dueno.fin::before{background:#30d158}
-  .burbuja.der.fin::after{
-    right:-19px;width:13px;background:var(--bg);border-bottom-left-radius:11px;
+  .burbuja.der.primera::after{
+    right:-19px;width:13px;background:var(--wa-fondo);
+    border-top-left-radius:11px;
   }
-  .burbuja.izq.fin::before{
-    left:-7px;width:20px;background:#26262a;border-bottom-right-radius:17px 14px;
+  .burbuja.izq.primera{border-top-left-radius:0}
+  .burbuja.izq.primera::before{
+    left:-7px;width:20px;background:var(--wa-entra);
+    border-top-right-radius:17px 14px;
   }
-  .burbuja.izq.fin::after{
-    left:-19px;width:13px;background:var(--bg);border-bottom-right-radius:11px;
+  .burbuja.izq.primera::after{
+    left:-19px;width:13px;background:var(--wa-fondo);
+    border-top-right-radius:11px;
   }
-
-  .acuse{
-    align-self:flex-end;font-size:11px;color:var(--muted);
-    margin:4px 6px 0;letter-spacing:.2px;
-  }
-  .acuse.falla{color:var(--peligro);font-weight:600}
 
   /* ---------- Barra de escritura ---------- */
   .escribir{
-    display:flex;align-items:flex-end;gap:10px;padding:10px 14px 14px;
-    border-top:1px solid var(--line);background:var(--surface);flex:none;
+    display:flex;align-items:flex-end;gap:9px;padding:8px 10px 12px;
+    background:var(--wa-fondo);flex:none;
   }
   .escribir input{
-    flex:1;padding:12px 18px;border-radius:22px;border:1px solid var(--line);
-    background:var(--bg);color:var(--text);min-height:46px;
+    flex:1;padding:12px 16px;border-radius:21px;border:none;
+    background:var(--wa-campo);color:var(--wa-texto);min-height:44px;
   }
-  .escribir input:focus{outline:none;border-color:#0a84ff}
+  .escribir input::placeholder{color:var(--wa-tenue)}
+  .escribir input:focus{outline:none}
   .enviar{
-    width:46px;height:46px;flex:none;border-radius:50%;background:#0a84ff;
+    width:44px;height:44px;flex:none;border-radius:50%;background:var(--wa-verde);
     display:grid;place-items:center;transition:transform .12s,opacity .12s;
   }
-  .enviar svg{width:22px;height:22px;fill:#fff}
+  .enviar svg{width:21px;height:21px;fill:#0b141a;margin-left:2px}
   .enviar:active{transform:scale(.92)}
-  .enviar:disabled{opacity:.35}
+  .enviar:disabled{opacity:.4}
 
   .aviso-bot{
-    padding:12px 16px;background:rgba(10,132,255,.1);color:#4c9aff;
-    font-size:14px;text-align:center;border-top:1px solid var(--line)
+    padding:12px 16px;background:var(--wa-entra);color:var(--wa-tenue);
+    font-size:14px;text-align:center;
   }
 
   /* ---------- Menú / info ---------- */
@@ -828,7 +841,7 @@ HORARIO: martes a domingo, 12pm a 10pm"></textarea>
         '<form class="escribir" id="formMsj">'+
         '<input id="txtMsj" placeholder="Mensaje" autocomplete="off">'+
         '<button class="enviar" type="submit" id="btnEnviar" aria-label="Enviar mensaje" disabled>'+
-        '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.6l6.6 6.6-1.5 1.5-4-4V20h-2.2V7.7l-4 4L5.4 10.2z"/></svg>'+
+        '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 21.5 22 12 2.5 2.5 2.5 9.8 16.2 12 2.5 14.2z"/></svg>'+
         '</button></form>';
       $('txtMsj').oninput = function(){ $('btnEnviar').disabled = !this.value.trim(); };
       $('formMsj').onsubmit = function(ev){
@@ -864,6 +877,18 @@ HORARIO: martes a domingo, 12pm a 10pm"></textarea>
     var d = new Date(String(iso).replace(' ', 'T') + (String(iso).indexOf('Z') < 0 ? 'Z' : ''));
     return isNaN(d) ? 0 : d.getTime();
   }
+
+  /* Solo la hora, para el rincón de la burbuja. */
+  function soloHora(iso){
+    var d = new Date(String(iso).replace(' ', 'T') + (String(iso).indexOf('Z') < 0 ? 'Z' : ''));
+    if (isNaN(d)) return '';
+    return d.toLocaleTimeString('es-CO', {hour:'numeric', minute:'2-digit', timeZone:'America/Bogota'})
+      .replace(/\s?a\.?\s?m\.?/i, ' a.m.').replace(/\s?p\.?\s?m\.?/i, ' p.m.');
+  }
+
+  /* Un chulo = salió pero no se entregó. Dos = entregado. */
+  var CHULO_UNO = '<svg viewBox="0 0 16 15" aria-hidden="true"><path d="M10.9 3.6 5.5 9.1 3.3 6.9l-.9.9 3.1 3.1 6.3-6.4z"/></svg>';
+  var CHULO_DOS = '<svg viewBox="0 0 18 15" aria-hidden="true"><path d="M13.7 3.6 8.3 9.1 6.1 6.9l-.9.9 3.1 3.1 6.3-6.4zm-4.6 0L3.7 9.1 1.5 6.9l-.9.9 3.1 3.1L10 3.6z"/></svg>';
 
   var HUECO_SELLO = 10 * 60 * 1000;  // 10 min sin hablar: se marca la hora
   var HUECO_TANDA = 2 * 60 * 1000;   // 2 min: se rompe la tanda de burbujas
@@ -906,25 +931,25 @@ HORARIO: martes a domingo, 12pm a 10pm"></textarea>
       }
 
       var b = document.createElement('div');
-      b.className = 'burbuja ' + lado(m) + ' ' + tipo(m) +
-        (abreTanda ? '' : ' sigue') +
-        (cierraTanda ? ' fin' : ' antes');
-      b.textContent = m.content;
-      cont.appendChild(b);
+      // La cola va en el PRIMER mensaje de la tanda: así lo hace WhatsApp.
+      b.className = 'burbuja ' + lado(m) + ' ' + tipo(m) + (abreTanda ? ' primera' : '');
 
-      // El acuse va solo bajo el último mensaje nuestro de la tanda: repetirlo
-      // en cada burbuja es ruido, y lo que importa es si lo último llegó.
-      if (lado(m) === 'der' && cierraTanda && m.delivered === false) {
-        var a = document.createElement('div');
-        a.className = 'acuse falla';
-        a.textContent = 'No entregado';
-        cont.appendChild(a);
-      } else if (lado(m) === 'der' && cierraTanda && !siguiente) {
-        var e = document.createElement('div');
-        e.className = 'acuse';
-        e.textContent = 'Entregado';
-        cont.appendChild(e);
+      var txt = document.createElement('span');
+      txt.className = 'txt';
+      txt.textContent = m.content;
+      b.appendChild(txt);
+
+      var hora = document.createElement('span');
+      hora.className = 'hora' + (lado(m) === 'der' && m.delivered === false ? ' falla' : '');
+      hora.appendChild(document.createTextNode(soloHora(m.created_at)));
+      // Los chulos solo en lo que sale del negocio, como en WhatsApp. Uno solo
+      // y en rojo cuando el mensaje no se pudo entregar.
+      if (lado(m) === 'der') {
+        hora.insertAdjacentHTML('beforeend', m.delivered === false ? CHULO_UNO : CHULO_DOS);
       }
+      b.appendChild(hora);
+
+      cont.appendChild(b);
     });
 
     cont.scrollTop = cont.scrollHeight;
@@ -1033,8 +1058,29 @@ HORARIO: martes a domingo, 12pm a 10pm"></textarea>
 
   if (token && clientId) { $('login').style.display = 'none'; arrancar(); }
 
+  /* ---------------- Actualización de la app ----------------
+     Sin esto, una versión nueva podía quedarse invisible en la tablet: el
+     service worker viejo seguía a cargo y la pantalla mostraba lo de antes,
+     sin que nadie tuviera forma de saberlo. Pasó con la pestaña de Reservas y
+     con el rediseño de los chats.
+
+     Tres piezas:
+      - updateViaCache 'none': el navegador nunca sirve el sw.js de su caché,
+        así siempre se compara contra el del servidor.
+      - update() al abrir: se pregunta de una si hay versión nueva.
+      - controllerchange: cuando el service worker nuevo toma el control, la
+        página se recarga UNA vez (el candado evita el bucle infinito) y el
+        equipo queda con lo último sin que nadie tenga que reinstalar nada. */
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('/sw.js').catch(function(){});
+    var yaRecargo = false;
+    navigator.serviceWorker.addEventListener('controllerchange', function(){
+      if (yaRecargo) return;
+      yaRecargo = true;
+      location.reload();
+    });
+    navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' })
+      .then(function(reg){ reg.update(); })
+      .catch(function(){});
   }
 
   /* ---------------- Instalación en la tablet ----------------

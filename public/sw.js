@@ -10,7 +10,7 @@
  *     al instante y muestre un mensaje claro si no hay señal
  */
 
-const CACHE = 'meridian-terminal-v2';
+const CACHE = 'meridian-terminal-v3';
 const ARMAZON = ['/tablet', '/manifest.json', '/icon-192.png', '/icon-512.png'];
 
 /* Los íconos y el manifiesto no cambian casi nunca: para esos sí conviene la
