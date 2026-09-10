@@ -371,25 +371,45 @@ async function processMessage(clientId, msg) {
     return;
   }
 
-  // Se despacha ANTES de dar por buena la respuesta, para que el estado real
-  // de entrega quede guardado junto al mensaje y visible en la bandeja.
-  const dispatch = await metaSend.sendText({
-    channelType: msg.channel_type,
-    to: msg.end_customer_id,
-    text: reply,
-    phoneNumberId: msg.phone_number_id
-  });
+  // Nadie escribe un párrafo por WhatsApp: se manda una frase, y enseguida
+  // otra. El guion le pide a Meri separar el segundo mensaje con una línea en
+  // blanco, y acá se despachan de verdad por separado — si llegaran pegados,
+  // el tono corto que se le pidió al modelo se perdería en la pantalla.
+  const partes = partirEnMensajes(reply);
+  let dispatch = { sent: false };
 
-  const botMsg = await dbRun(
-    'INSERT INTO messages (conversation_id, sender_type, content, external_message_id) VALUES (?, ?, ?, ?)',
-    [conversation.id, 'bot', reply, dispatch.externalId || null]
-  );
+  for (let i = 0; i < partes.length; i++) {
+    const parte = partes[i];
+
+    // Una pausa corta entre los dos: sin ella llegan en el mismo segundo y se
+    // ven como un mensaje partido en dos, no como alguien escribiendo.
+    if (i > 0) await new Promise((r) => setTimeout(r, 1200));
+
+    // Se despacha ANTES de dar por buena la respuesta, para que el estado real
+    // de entrega quede guardado junto al mensaje y visible en la bandeja.
+    const envio = await metaSend.sendText({
+      channelType: msg.channel_type,
+      to: msg.end_customer_id,
+      text: parte,
+      phoneNumberId: msg.phone_number_id
+    });
+
+    const guardado = await dbRun(
+      'INSERT INTO messages (conversation_id, sender_type, content, external_message_id) VALUES (?, ?, ?, ?)',
+      [conversation.id, 'bot', parte, envio.externalId || null]
+    );
+
+    emitToClient(clientId, 'conversation:new_message', {
+      id: guardado.id, conversation_id: conversation.id, sender_type: 'bot', content: parte,
+      delivered: envio.sent, created_at: new Date().toISOString()
+    });
+
+    // El aviso de no entregado y el estado de la conversación se resuelven con
+    // el último despacho, que es el que dice si el cliente recibió algo.
+    if (i === partes.length - 1) dispatch = envio;
+  }
+
   await dbRun('UPDATE conversations SET last_message_at = CURRENT_TIMESTAMP WHERE id = ?', [conversation.id]);
-
-  emitToClient(clientId, 'conversation:new_message', {
-    id: botMsg.id, conversation_id: conversation.id, sender_type: 'bot', content: reply,
-    delivered: dispatch.sent, created_at: new Date().toISOString()
-  });
 
   if (!dispatch.sent) {
     // El dueño tiene que enterarse de que ese mensaje NO llegó, sobre todo si
@@ -419,6 +439,26 @@ async function processMessage(clientId, msg) {
   // Va al final y sin await del cliente final a propósito: si esto falla o
   // tarda, el cliente ya recibió su respuesta.
   await syncOrderFromConversation(clientId, conversation, history, incoming, msg);
+}
+
+/**
+ * Parte la respuesta en los mensajes que se van a mandar por separado.
+ *
+ * El guion le pide a Meri escribir dos mensajes cortos separados por una línea
+ * en blanco, en vez de un párrafo. Acá se convierte eso en envíos distintos.
+ *
+ * Tope de dos: si el modelo se pasa de entusiasta y separa cuatro bloques,
+ * mandarle cuatro mensajes seguidos a alguien parece spam — el resto se junta
+ * en el segundo. Y si no hay línea en blanco, se manda uno solo tal cual.
+ */
+function partirEnMensajes(texto) {
+  const partes = String(texto || '')
+    .split(/\n\s*\n+/)
+    .map((p) => p.trim())
+    .filter(Boolean);
+
+  if (partes.length <= 1) return [String(texto || '').trim()];
+  return [partes[0], partes.slice(1).join('\n')];
 }
 
 /**
