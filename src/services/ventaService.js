@@ -199,15 +199,35 @@ const generarCobro = async (conversacion) => {
   const orderId = boldService.generateOrderId(cliente.id, plan.id);
   const descripcion = `MeridianTech - Plan ${plan.name}`;
 
+  // El link de pago real se crea ANTES de guardar la transacción: si Bold
+  // falla, es mejor no dejar un cobro "pendiente" fantasma sin forma de
+  // pagarlo — se deriva a una persona, igual que cuando no se identifica el
+  // plan (ver el comentario de más arriba: no cobrar es mejor que cobrar mal).
+  const link = await boldService.crearLinkDePago({
+    reference: orderId,
+    amount: plan.price,
+    currency: plan.currency || 'COP',
+    description: descripcion,
+    callbackUrl: `${APP_URL}/pagar/${orderId}`
+  });
+
+  if (!link.ok) {
+    logger.error('No se pudo crear el link de pago de Bold', {
+      orderId, clientId: cliente.id, plan: plan.name, motivo: link.motivo
+    });
+    return { ok: false, motivo: `Bold no generó el link de pago: ${link.motivo}` };
+  }
+
   await dbRun(
-    `INSERT INTO transactions (client_id, plan_id, amount, currency, status, bold_transaction_id, description)
-     VALUES (?, ?, ?, ?, 'pending', ?, ?)`,
-    [cliente.id, plan.id, plan.price, plan.currency || 'COP', orderId, descripcion]
+    `INSERT INTO transactions
+      (client_id, plan_id, amount, currency, status, bold_transaction_id, bold_payment_link, bold_payment_url, description)
+     VALUES (?, ?, ?, ?, 'pending', ?, ?, ?, ?)`,
+    [cliente.id, plan.id, plan.price, plan.currency || 'COP', orderId, link.paymentLink, link.url, descripcion]
   );
 
   logger.info('Cobro generado a pedido del cliente', {
     orderId, clientId: cliente.id, plan: plan.name, monto: plan.price,
-    conversationId: conversacion.id
+    conversationId: conversacion.id, paymentLink: link.paymentLink
   });
 
   return {
@@ -215,7 +235,9 @@ const generarCobro = async (conversacion) => {
     plan,
     orderId,
     monto: plan.price,
-    enlace: `${APP_URL}/pagar/${orderId}`,
+    // El enlace que se manda por WhatsApp es el de Bold directamente — más
+    // confianza que un dominio propio, y es donde el cliente paga de verdad.
+    enlace: link.url,
     enlaceQr: `${APP_URL}/pagar/${orderId}/qr.png`
   };
 };

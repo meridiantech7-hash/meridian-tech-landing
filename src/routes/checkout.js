@@ -201,10 +201,30 @@ router.post('/plan/:planId', limitePago, async (req, res, next) => {
 
     const orderId = boldService.generateOrderId(cliente.id, plan.id);
     const descripcion = `MeridianTech - Plan ${plan.name}`;
+
+    const link = await boldService.crearLinkDePago({
+      reference: orderId,
+      amount: plan.price,
+      currency: plan.currency || 'COP',
+      description: descripcion,
+      callbackUrl: `${APP_URL}/pagar/${orderId}`
+    });
+
+    if (!link.ok) {
+      logger.error('No se pudo crear el link de pago desde la web', { orderId, motivo: link.motivo });
+      return res.status(503).send(paginaSimple(
+        'Pago temporalmente no disponible — MeridianTech', 'mal', 'No disponible',
+        `<h1>No pudimos generar el pago</h1>
+         <p style="color:#C9CDD8">Escríbenos al <a href="https://wa.me/573142162323">+57 314 216 2323</a>
+         y lo hacemos por WhatsApp.</p>`
+      ));
+    }
+
     await dbRun(
-      `INSERT INTO transactions (client_id, plan_id, amount, currency, status, bold_transaction_id, description)
-       VALUES (?, ?, ?, ?, 'pending', ?, ?)`,
-      [cliente.id, plan.id, plan.price, plan.currency || 'COP', orderId, descripcion]
+      `INSERT INTO transactions
+        (client_id, plan_id, amount, currency, status, bold_transaction_id, bold_payment_link, bold_payment_url, description)
+       VALUES (?, ?, ?, ?, 'pending', ?, ?, ?, ?)`,
+      [cliente.id, plan.id, plan.price, plan.currency || 'COP', orderId, link.paymentLink, link.url, descripcion]
     );
 
     logger.info('Cobro creado desde la web', { orderId, clientId: cliente.id, plan: plan.name });
@@ -247,53 +267,22 @@ router.get('/:orderId', async (req, res, next) => {
       ));
     }
 
-    const descripcion = tx.description || `MeridianTech - Plan ${plan?.name || ''}`;
-    const intento = boldService.createPaymentIntent(
-      orderId, tx.amount, descripcion, tx.currency || 'COP'
-    );
-
-    if (!intento.configured) {
-      logger.error('Página de pago abierta sin Bold configurado', { orderId });
+    // El link real de pago ya se creó cuando se generó el cobro (ventaService
+    // o el formulario de la web) — esta página ya NO aloja el pago en sí
+    // (ese era el Botón de Pagos, el producto equivocado para esta cuenta).
+    // Ahora es solo un redirector al checkout real de Bold.
+    if (!tx.bold_payment_url) {
+      logger.error('Cobro sin link de pago de Bold — se creó antes de la migración o Bold falló', { orderId });
       return res.status(503).send(paginaSimple(
         'Pago temporalmente no disponible — MeridianTech', 'mal', 'No disponible',
-        `<h1>No podemos procesar el pago ahora</h1>
-         <p style="color:#C9CDD8">Estamos resolviendo un problema con la pasarela.
-         Escríbenos al <a href="https://wa.me/573142162323">+57 314 216 2323</a>
-         y lo hacemos por otro medio.</p>`
+        `<h1>Este link de pago quedó incompleto</h1>
+         <p style="color:#C9CDD8">Escríbenos al <a href="https://wa.me/573142162323">+57 314 216 2323</a>
+         y te generamos uno nuevo.</p>`
       ));
     }
 
-    logger.info('Página de pago servida', { orderId, monto: tx.amount });
-
-    // El script de Bold se inserta con sus atributos data-*. La firma viene
-    // calculada del servidor; la llave secreta nunca llega al navegador.
-    res.send(`${CABEZA(`Pagar ${plan?.name || 'plan'} — MeridianTech`)}
-<div class="tarjeta">
-  <div class="estado pend">Pendiente de pago</div>
-  <div class="eti">Plan seleccionado</div>
-  <h1>${esc(plan?.name || 'Plan')}</h1>
-  <div class="monto">${pesos(tx.amount)}</div>
-  <div class="periodo">${esc(tx.currency || 'COP')} · pago mensual</div>
-
-  <div class="fila"><span>Referencia</span><code>${esc(orderId)}</code></div>
-  <div class="fila"><span>Empresa</span><span>MERIDIAN TECH S.A.S.</span></div>
-
-  <div class="boton-zona">
-    <script src="https://checkout.bold.co/library/boldPaymentButton.js"></script>
-    <script
-      data-bold-button="dark-L"
-      data-api-key="${esc(intento.apiKey)}"
-      data-amount="${esc(String(tx.amount))}"
-      data-currency="${esc(tx.currency || 'COP')}"
-      data-order-id="${esc(orderId)}"
-      data-integrity-signature="${esc(intento.integritySignature)}"
-      data-description="${esc(descripcion.slice(0, 100))}"
-      data-redirection-url="${APP_URL}/pagar/${esc(orderId)}"
-    ></script>
-  </div>
-
-  <p class="nota">Pago procesado por Bold. MeridianTech no almacena datos de tu tarjeta.</p>
-</div>${PIE}`);
+    logger.info('Redirigiendo al checkout real de Bold', { orderId });
+    res.redirect(302, tx.bold_payment_url);
   } catch (error) {
     next(error);
   }
@@ -309,11 +298,14 @@ router.get('/:orderId/qr.png', async (req, res, next) => {
   try {
     const orderId = req.params.orderId;
     const tx = await dbGet(
-      'SELECT id FROM transactions WHERE bold_transaction_id = ?', [orderId]
+      'SELECT id, bold_payment_url FROM transactions WHERE bold_transaction_id = ?', [orderId]
     );
     if (!tx) return res.sendStatus(404);
 
-    const png = await QRCode.toBuffer(`${APP_URL}/pagar/${orderId}`, {
+    // El QR codifica el checkout real de Bold directamente — no nuestra
+    // página, que ahora es solo un redirector (un salto de más al escanear).
+    const destino = tx.bold_payment_url || `${APP_URL}/pagar/${orderId}`;
+    const png = await QRCode.toBuffer(destino, {
       type: 'png',
       width: 600,
       margin: 2,

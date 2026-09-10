@@ -29,6 +29,11 @@ const migrations = [
   // de cuenta, reservas) — cualquier otro número que las pida se rechaza sin
   // gastar IA. Ver ownerService.js.
   "ALTER TABLE bot_configs ADD COLUMN owner_phone TEXT",
+  // Migración a la API real de Bold (Link de Pagos) — antes se usaba el
+  // Botón de Pagos, un producto distinto al que esta cuenta tiene habilitado.
+  // Ver boldService.js.
+  "ALTER TABLE transactions ADD COLUMN bold_payment_link TEXT",
+  "ALTER TABLE transactions ADD COLUMN bold_payment_url TEXT",
   // El modelo guardado por cliente manda sobre el valor por defecto del código,
   // así que cambiar la constante no basta: hay que mover a los que ya existen.
   // Se migran solo los modelos que se midieron lentos o que dejaron de estar
@@ -128,7 +133,9 @@ CREATE TABLE IF NOT EXISTS transactions (
   currency TEXT DEFAULT 'COP',
   status TEXT DEFAULT 'pending',
   payment_method TEXT,
-  bold_transaction_id TEXT UNIQUE,
+  bold_transaction_id TEXT UNIQUE, -- nuestro "reference" (orderId), lo que Bold devuelve en data.metadata.reference
+  bold_payment_link TEXT,          -- id propio de Bold para el link, ej. "LNK_H7S4xxx"
+  bold_payment_url TEXT,           -- URL real de checkout.bold.co — lo que se manda al cliente
   description TEXT,
   receipt_url TEXT,
   notes TEXT,
