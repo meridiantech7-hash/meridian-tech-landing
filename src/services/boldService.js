@@ -58,13 +58,50 @@ const crearLinkDePago = async ({ reference, amount, currency = 'COP', descriptio
     };
     if (callbackUrl) body.callback_url = callbackUrl;
 
-    const { data } = await axios.post(BOLD_LINKS_URL, body, {
-      headers: {
-        Authorization: `x-api-key ${BOLD_API_KEY}`,
-        'Content-Type': 'application/json'
-      },
-      timeout: 15000
-    });
+    // Bold viene rechazando la llave con "explicit deny in an identity-based
+    // policy", que es un mensaje de autorización de AWS: la petición llega y
+    // el permiso se niega. Con un solo intento no se puede distinguir entre
+    // "la llave está mal / el producto no está habilitado" y "el header no va
+    // en la forma que espera Bold", así que se prueban las dos formas
+    // documentadas y se deja en el log cuál funcionó.
+    //
+    // Se registra el LARGO de la llave, nunca la llave: un pegado incompleto
+    // fue exactamente el defecto que tumbó los webhooks de Meta hace unos
+    // días, y se encontró con este mismo diagnóstico.
+    const formas = [
+      { nombre: 'Authorization: x-api-key <llave>', headers: { Authorization: `x-api-key ${BOLD_API_KEY}` } },
+      { nombre: 'x-api-key: <llave>', headers: { 'x-api-key': BOLD_API_KEY } }
+    ];
+
+    let data = null;
+    const fallos = [];
+
+    for (const forma of formas) {
+      try {
+        const resp = await axios.post(BOLD_LINKS_URL, body, {
+          headers: { ...forma.headers, 'Content-Type': 'application/json' },
+          timeout: 15000
+        });
+        data = resp.data;
+        logger.info('Bold aceptó la llamada', { forma: forma.nombre, reference });
+        break;
+      } catch (err) {
+        fallos.push({
+          forma: forma.nombre,
+          estado: err.response?.status,
+          respuesta: err.response?.data || err.message
+        });
+      }
+    }
+
+    if (!data) {
+      logger.error('Bold rechazó la creación del link con todas las formas de autenticación', {
+        reference,
+        largoLlave: BOLD_API_KEY.length,
+        fallos
+      });
+      return { ok: false, motivo: 'Bold rechazó la llave de la API' };
+    }
 
     if (data.errors?.length) {
       const motivo = data.errors.map((e) => e.message || e.description || JSON.stringify(e)).join('; ');

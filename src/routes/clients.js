@@ -27,6 +27,18 @@ router.get('/', verifyToken, async (req, res, next) => {
     const offset = (page - 1) * limit;
     const search = (req.query.search || '').trim();
 
+    // Antes esto miraba solo los clientes 'active', y así los prospectos
+    // quedaban invisibles: todo el que pidió cobrar por WhatsApp y no
+    // completó el pago se registraba como 'prospect' y no aparecía en ningún
+    // lado. Son justo los contactos que hay que perseguir.
+    //
+    // El valor por omisión sigue siendo 'active' para no cambiarle la vista de
+    // siempre al panel; 'prospect', 'inactive' o 'all' se piden explícitos.
+    const estadosValidos = ['active', 'prospect', 'inactive', 'all'];
+    const estado = estadosValidos.includes(req.query.status) ? req.query.status : 'active';
+    const estadoClause = estado === 'all' ? '1=1' : 'c.status = ?';
+    const estadoParams = estado === 'all' ? [] : [estado];
+
     let searchClause = '';
     const searchParams = [];
     if (search) {
@@ -46,16 +58,16 @@ router.get('/', verifyToken, async (req, res, next) => {
        LEFT JOIN subscriptions s ON c.id = s.client_id AND s.status = 'active'
        LEFT JOIN plans p ON s.plan_id = p.id
        LEFT JOIN transactions t ON c.id = t.client_id
-       WHERE c.status = 'active' ${searchClause}
+       WHERE ${estadoClause} ${searchClause}
        GROUP BY c.id
        ORDER BY c.created_at DESC
        LIMIT ? OFFSET ?`,
-      [...searchParams, limit, offset]
+      [...estadoParams, ...searchParams, limit, offset]
     );
 
     const countResult = await dbGet(
-      `SELECT COUNT(*) as total FROM clients c WHERE c.status = 'active' ${searchClause}`,
-      searchParams
+      `SELECT COUNT(*) as total FROM clients c WHERE ${estadoClause} ${searchClause}`,
+      [...estadoParams, ...searchParams]
     );
     const total = countResult.total;
 
@@ -79,10 +91,11 @@ router.get('/', verifyToken, async (req, res, next) => {
 // GET /api/clients/:id - Obtener un cliente (perfil / estado de cuenta completo)
 router.get('/:id', verifyToken, async (req, res, next) => {
   try {
-    const client = await dbGet(
-      'SELECT * FROM clients WHERE id = ? AND status = ?',
-      [req.params.id, 'active']
-    );
+    // Sin filtro de estado: si se pide un cliente por su id, se devuelve.
+    // Con el filtro puesto, un prospecto existía en la base pero la API
+    // contestaba 404, que es la peor respuesta posible — parece un error de
+    // quien consulta y no una decisión del servidor.
+    const client = await dbGet('SELECT * FROM clients WHERE id = ?', [req.params.id]);
 
     if (!client) {
       return res.status(404).json({ error: 'Cliente no encontrado' });
