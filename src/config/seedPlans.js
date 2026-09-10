@@ -2,11 +2,31 @@ require('dotenv').config();
 const { dbGet, dbRun, close } = require('./database');
 const logger = require('../utils/logger');
 
+/**
+ * Precios recalculados (septiembre 2026) porque los anteriores dejaban la
+ * implementación del plan Básico en margen cero o negativo: un equipo de
+ * hasta $850.000 se comía toda la implementación de $850.000, sin dejar nada
+ * para cubrir las APIs y los permisos que la empresa paga por su cuenta.
+ *
+ * Insumos confirmados:
+ *   - Tablet Galaxy A11+ (Básico/Pro, y una de las dos de Premium): $650.000–$850.000 → 750.000
+ *   - Segunda tablet de Premium (gama superior): $1.000.000–$1.200.000 → 1.100.000
+ *   - Gastos fijos mensuales a cubrir: $1.000.000
+ *
+ * Supuesto SIN confirmar todavía — avisar antes de dar esto por definitivo:
+ *   - Clientes activos para repartir ese gasto fijo: 8 (ajustable, es la
+ *     variable que más mueve la mensualidad). Ver la calculadora del PR.
+ *
+ * Fórmula (misma que la calculadora interactiva):
+ *   implementación = costo del equipo × 1.3 (margen 30%) + 300.000 (puesta en marcha)
+ *   mensualidad = (costo variable del plan + gasto_fijo/clientes) × 1.35 (margen 35%)
+ */
 const plans = [
   {
     name: 'Básico',
     description: 'Automatización esencial para empezar a escalar tu operación',
-    price: 495000,
+    price: 775000,
+    implementation_price: 1275000,
     currency: 'COP',
     billing_cycle: 'monthly',
     features: [
@@ -25,7 +45,8 @@ const plans = [
   {
     name: 'Pro',
     description: 'Automatización avanzada con IA para equipos en crecimiento',
-    price: 995000,
+    price: 1405000,
+    implementation_price: 1275000,
     currency: 'COP',
     billing_cycle: 'monthly',
     features: [
@@ -45,7 +66,8 @@ const plans = [
   {
     name: 'Premium',
     description: 'Solución integral de automatización e IA a medida',
-    price: 1995000,
+    price: 2800000,
+    implementation_price: 2705000,
     currency: 'COP',
     billing_cycle: 'monthly',
     features: [
@@ -74,12 +96,13 @@ async function seedPlans() {
       if (existing) {
         logger.info(`   ↺ Plan "${plan.name}" ya existe, actualizando...`);
         await dbRun(
-          `UPDATE plans SET description = ?, price = ?, currency = ?, billing_cycle = ?, features = ?, max_users = ?, max_storage = ?,
+          `UPDATE plans SET description = ?, price = ?, implementation_price = ?, currency = ?, billing_cycle = ?, features = ?, max_users = ?, max_storage = ?,
              messages_included = ?, message_overage_price = ?, call_minutes_included = ?, minute_overage_price = ?, updated_at = CURRENT_TIMESTAMP
            WHERE id = ?`,
           [
             plan.description,
             plan.price,
+            plan.implementation_price,
             plan.currency,
             plan.billing_cycle,
             JSON.stringify(plan.features),
@@ -95,13 +118,14 @@ async function seedPlans() {
       } else {
         logger.info(`   ✓ Creando plan "${plan.name}" - $${plan.price.toLocaleString('es-CO')} COP`);
         await dbRun(
-          `INSERT INTO plans (name, description, price, currency, billing_cycle, features, max_users, max_storage,
+          `INSERT INTO plans (name, description, price, implementation_price, currency, billing_cycle, features, max_users, max_storage,
              messages_included, message_overage_price, call_minutes_included, minute_overage_price)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             plan.name,
             plan.description,
             plan.price,
+            plan.implementation_price,
             plan.currency,
             plan.billing_cycle,
             JSON.stringify(plan.features),

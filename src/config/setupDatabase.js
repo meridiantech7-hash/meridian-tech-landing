@@ -9,6 +9,9 @@ const migrations = [
   "ALTER TABLE plans ADD COLUMN message_overage_price INTEGER DEFAULT 0",
   "ALTER TABLE plans ADD COLUMN call_minutes_included INTEGER DEFAULT 0",
   "ALTER TABLE plans ADD COLUMN minute_overage_price INTEGER DEFAULT 0",
+  // Antes solo vivía como texto suelto en el guion del bot (seedInternal.js) —
+  // ningún sistema podía consultarla. Ahora es un dato real del plan.
+  "ALTER TABLE plans ADD COLUMN implementation_price INTEGER DEFAULT 0",
   "ALTER TABLE clients ADD COLUMN is_internal INTEGER DEFAULT 0",
   // Por defecto 1 (true): no cambia el comportamiento de ningún cliente que ya
   // toma pedidos (capa A, restaurantes). Se apaga explícitamente solo donde no
@@ -21,6 +24,11 @@ const migrations = [
   // ventana de los últimos 20 mensajes. No agrega ninguna llamada de IA nueva
   // — se rellena con lo que el mismo modelo ya devuelve en su respuesta normal.
   "ALTER TABLE conversations ADD COLUMN customer_notes TEXT",
+  // Número de WhatsApp del dueño del negocio, fijo por cliente. Es la única
+  // identidad que se reconoce para operaciones sensibles (inventario, estados
+  // de cuenta, reservas) — cualquier otro número que las pida se rechaza sin
+  // gastar IA. Ver ownerService.js.
+  "ALTER TABLE bot_configs ADD COLUMN owner_phone TEXT",
   // El modelo guardado por cliente manda sobre el valor por defecto del código,
   // así que cambiar la constante no basta: hay que mover a los que ya existen.
   // Se migran solo los modelos que se midieron lentos o que dejaron de estar
@@ -88,6 +96,7 @@ CREATE TABLE IF NOT EXISTS plans (
   message_overage_price INTEGER DEFAULT 0,
   call_minutes_included INTEGER DEFAULT 0,
   minute_overage_price INTEGER DEFAULT 0,
+  implementation_price INTEGER DEFAULT 0, -- cobro único de puesta en marcha, aparte de la mensualidad
   status TEXT DEFAULT 'active',
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -194,6 +203,7 @@ CREATE TABLE IF NOT EXISTS bot_configs (
   handoff_keywords TEXT,          -- JSON array de palabras/frases que derivan a humano
   max_failed_attempts INTEGER DEFAULT 3,
   takes_orders INTEGER DEFAULT 1, -- si es 0, se salta extractOrder (ahorra una llamada de IA por mensaje en negocios que no toman pedidos, ej. venta consultiva)
+  owner_phone TEXT,               -- WhatsApp fijo del dueño: único número autorizado para inventario, reservas y estados de cuenta
   status TEXT DEFAULT 'active',
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -251,6 +261,30 @@ CREATE TABLE IF NOT EXISTS orders (
   ai_raw TEXT,                            -- lo que extrajo la IA, para auditar errores
   confirmed_by INTEGER,                   -- usuario que la aceptó
   confirmed_at DATETIME,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE,
+  FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE SET NULL
+);
+
+-- Reservas / citas / programaciones del negocio (mesas, turnos, lo que aplique).
+--
+-- Igual que orders: "source" distingue si la agendó la IA desde un chat, la
+-- tablet a mano, o el dueño desde su WhatsApp autorizado (ver ownerService.js).
+-- "scheduled_at" es la fecha/hora de la reserva en sí, no cuándo se creó el
+-- registro — así una reserva hecha ayer para hoy aparece en la agenda de hoy.
+CREATE TABLE IF NOT EXISTS reservations (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  client_id INTEGER NOT NULL,
+  conversation_id INTEGER,
+  customer_name TEXT,
+  customer_phone TEXT,
+  party_size INTEGER,                     -- número de personas, si aplica
+  scheduled_at DATETIME NOT NULL,         -- cuándo es la reserva
+  status TEXT DEFAULT 'confirmada',       -- confirmada | pendiente | cancelada
+  source TEXT DEFAULT 'tablet',           -- bot | tablet | jefe
+  channel_type TEXT,
+  notes TEXT,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE,

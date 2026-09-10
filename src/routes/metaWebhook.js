@@ -6,6 +6,7 @@ const metaSend = require('../services/metaSend');
 const { emitToClient } = require('./conversations');
 const { createOrder } = require('./orders');
 const ventaService = require('../services/ventaService');
+const ownerService = require('../services/ownerService');
 const logger = require('../utils/logger');
 
 const router = express.Router();
@@ -181,6 +182,31 @@ async function processMessage(clientId, msg) {
     return;
   }
 
+  // Candado de temas restringidos y atajos del dueño — se revisa ANTES que
+  // todo lo demás, con lo que ya tenemos en `config` (una sola lectura, sin
+  // IA): inventario, estados de cuenta y de reservas jamás los responde el
+  // bot por cuenta propia, y los pedidos/reservas de hoy se le contestan al
+  // dueño con una consulta directa a la base, no con la IA adivinando cifras.
+  const config = await geminiService.getBotConfig(clientId);
+  const esDueno = ownerService.esDueno(config, msg.end_customer_id);
+
+  if (!esDueno) {
+    const temaRestringido = ownerService.esTemaRestringido(msg.text);
+    if (temaRestringido) {
+      logger.info('Tema restringido rechazado sin IA', { conversationId: conversation.id, tema: temaRestringido });
+      await responderDirecto(clientId, conversation, msg, ownerService.MENSAJE_NO_AUTORIZADO);
+      return;
+    }
+  } else if (ownerService.esConsultaPedidos(msg.text)) {
+    const resumen = await ownerService.resumenPedidosHoy(clientId);
+    await responderDirecto(clientId, conversation, msg, resumen);
+    return;
+  } else if (ownerService.esConsultaReservas(msg.text)) {
+    const resumen = await ownerService.resumenReservasHoy(clientId);
+    await responderDirecto(clientId, conversation, msg, resumen);
+    return;
+  }
+
   const history = await dbAll(
     'SELECT sender_type, content FROM messages WHERE conversation_id = ? ORDER BY created_at ASC LIMIT 20',
     [conversation.id]
@@ -353,6 +379,32 @@ async function processMessage(clientId, msg) {
   // Va al final y sin await del cliente final a propósito: si esto falla o
   // tarda, el cliente ya recibió su respuesta.
   await syncOrderFromConversation(clientId, conversation, history, incoming, msg);
+}
+
+/**
+ * Manda un texto fijo (no lo escribe la IA), lo guarda y lo emite en vivo —
+ * para el candado de temas restringidos y los atajos de consulta del dueño
+ * (pedidos/reservas de hoy), donde la respuesta ya se armó con datos exactos
+ * de la base y no tiene sentido pagar por que un modelo la redacte.
+ */
+async function responderDirecto(clientId, conversation, msg, texto) {
+  const envio = await metaSend.sendText({
+    channelType: msg.channel_type,
+    to: msg.end_customer_id,
+    text: texto,
+    phoneNumberId: msg.phone_number_id
+  });
+
+  const guardado = await dbRun(
+    'INSERT INTO messages (conversation_id, sender_type, content, external_message_id) VALUES (?, ?, ?, ?)',
+    [conversation.id, 'bot', texto, envio.externalId || null]
+  );
+  await dbRun('UPDATE conversations SET last_message_at = CURRENT_TIMESTAMP WHERE id = ?', [conversation.id]);
+
+  emitToClient(clientId, 'conversation:new_message', {
+    id: guardado.id, conversation_id: conversation.id, sender_type: 'bot',
+    content: texto, delivered: envio.sent, created_at: new Date().toISOString()
+  });
 }
 
 /**

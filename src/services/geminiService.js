@@ -494,35 +494,53 @@ ${config.knowledge_base ? 'CATÁLOGO Y PRECIOS DEL NEGOCIO (úsalo para nombres 
 
 /**
  * Crea o actualiza la configuración del bot de un cliente.
+ *
+ * Actualización PARCIAL a propósito: un campo que el que llama no menciona
+ * (`data.campo === undefined`) conserva el valor que ya tenía, en vez de
+ * volver a su default. El panel de admin (botConfig.js) no conoce campos
+ * como `takes_orders` u `owner_phone` — sin esto, guardar el conocimiento
+ * previo desde ahí resetearía esos campos en cada guardado.
  */
 const upsertBotConfig = async (clientId, data) => {
-  const existing = await dbGet('SELECT id FROM bot_configs WHERE client_id = ?', [clientId]);
+  const existing = await dbGet('SELECT * FROM bot_configs WHERE client_id = ?', [clientId]);
+
+  const campo = (nombre, porDefecto) =>
+    data[nombre] !== undefined ? data[nombre] : (existing ? existing[nombre] : porDefecto);
 
   const fields = {
-    ai_provider: data.ai_provider || 'gemini',
-    ai_model: data.ai_model || DEFAULT_MODEL,
-    system_prompt: data.system_prompt || '',
-    business_rules: JSON.stringify(data.business_rules || {}),
-    knowledge_base: data.knowledge_base || '',
-    handoff_keywords: JSON.stringify(data.handoff_keywords || []),
-    max_failed_attempts: data.max_failed_attempts || 3,
+    ai_provider: campo('ai_provider', 'gemini'),
+    ai_model: campo('ai_model', DEFAULT_MODEL),
+    system_prompt: campo('system_prompt', ''),
+    business_rules: data.business_rules !== undefined
+      ? JSON.stringify(data.business_rules)
+      : (existing ? existing.business_rules : '{}'),
+    knowledge_base: campo('knowledge_base', ''),
+    handoff_keywords: data.handoff_keywords !== undefined
+      ? JSON.stringify(data.handoff_keywords)
+      : (existing ? existing.handoff_keywords : '[]'),
+    max_failed_attempts: campo('max_failed_attempts', 3),
     // Por defecto 1 (true): quien no lo especifique se comporta como siempre
     // (restaurantes, capa A). Se apaga explícitamente en seedInternal.js.
-    takes_orders: data.takes_orders === undefined ? 1 : (data.takes_orders ? 1 : 0)
+    takes_orders: data.takes_orders !== undefined
+      ? (data.takes_orders ? 1 : 0)
+      : (existing ? existing.takes_orders : 1),
+    // WhatsApp fijo del dueño — único número autorizado para inventario,
+    // reservas y estados de cuenta (ver ownerService.js).
+    owner_phone: campo('owner_phone', null)
   };
 
   if (existing) {
     await dbRun(
-      `UPDATE bot_configs SET ai_provider=?, ai_model=?, system_prompt=?, business_rules=?, knowledge_base=?, handoff_keywords=?, max_failed_attempts=?, takes_orders=?, updated_at=CURRENT_TIMESTAMP WHERE client_id=?`,
-      [fields.ai_provider, fields.ai_model, fields.system_prompt, fields.business_rules, fields.knowledge_base, fields.handoff_keywords, fields.max_failed_attempts, fields.takes_orders, clientId]
+      `UPDATE bot_configs SET ai_provider=?, ai_model=?, system_prompt=?, business_rules=?, knowledge_base=?, handoff_keywords=?, max_failed_attempts=?, takes_orders=?, owner_phone=?, updated_at=CURRENT_TIMESTAMP WHERE client_id=?`,
+      [fields.ai_provider, fields.ai_model, fields.system_prompt, fields.business_rules, fields.knowledge_base, fields.handoff_keywords, fields.max_failed_attempts, fields.takes_orders, fields.owner_phone, clientId]
     );
     return existing.id;
   }
 
   const result = await dbRun(
-    `INSERT INTO bot_configs (client_id, ai_provider, ai_model, system_prompt, business_rules, knowledge_base, handoff_keywords, max_failed_attempts, takes_orders)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [clientId, fields.ai_provider, fields.ai_model, fields.system_prompt, fields.business_rules, fields.knowledge_base, fields.handoff_keywords, fields.max_failed_attempts, fields.takes_orders]
+    `INSERT INTO bot_configs (client_id, ai_provider, ai_model, system_prompt, business_rules, knowledge_base, handoff_keywords, max_failed_attempts, takes_orders, owner_phone)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [clientId, fields.ai_provider, fields.ai_model, fields.system_prompt, fields.business_rules, fields.knowledge_base, fields.handoff_keywords, fields.max_failed_attempts, fields.takes_orders, fields.owner_phone]
   );
   return result.id;
 };

@@ -97,6 +97,23 @@
   }
   .vacio{color:var(--muted);text-align:center;padding:26px 10px;font-size:14px}
 
+  /* ---------- Reservas ---------- */
+  .agenda{flex:1;overflow-y:auto;padding:16px;max-width:720px;margin:0 auto;width:100%;display:flex;flex-direction:column;gap:10px}
+  .reserva{
+    background:var(--surface);border-radius:12px;padding:14px 16px;
+    border-left:5px solid var(--recibido);display:flex;align-items:center;gap:14px;
+  }
+  .reserva.cancelada{border-left-color:var(--peligro);opacity:.55}
+  .reserva .hora{font-size:20px;font-weight:800;font-variant-numeric:tabular-nums;min-width:64px}
+  .reserva .info{flex:1;min-width:0}
+  .reserva .quien{font-weight:700}
+  .reserva .detalle{color:var(--muted);font-size:14px;margin-top:2px}
+  .reserva .estado{
+    font-size:11px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;
+    padding:3px 8px;border-radius:5px;background:rgba(76,154,255,.16);color:var(--recibido);white-space:nowrap;
+  }
+  .reserva .estado.pendiente{background:rgba(245,166,35,.16);color:var(--confirmar)}
+
   /* ---------- Chats ---------- */
   .chats{display:flex;width:100%;min-height:0}
   .lista{
@@ -232,6 +249,9 @@
     <button class="tab" role="tab" aria-selected="false" data-vista="chats">
       Chats <span class="badge" id="badgeChats" hidden>0</span>
     </button>
+    <button class="tab" role="tab" aria-selected="false" data-vista="reservas">
+      Reservas <span class="badge" id="badgeReservas" hidden>0</span>
+    </button>
     <button class="tab" role="tab" aria-selected="false" data-vista="menu">Menú e info</button>
   </nav>
   <div class="derecha">
@@ -266,6 +286,11 @@
         <div id="zonaEscribir"></div>
       </div>
     </div>
+  </section>
+
+  <!-- ================= RESERVAS ================= -->
+  <section class="vista" id="vista-reservas">
+    <div class="agenda" id="agenda"></div>
   </section>
 
   <!-- ================= MENÚ ================= -->
@@ -416,6 +441,7 @@ HORARIO: martes a domingo, 12pm a 10pm"></textarea>
       });
       $('vista-'+t.dataset.vista).classList.add('activa');
       if (t.dataset.vista === 'chats') cargarChats();
+      if (t.dataset.vista === 'reservas') cargarReservas();
       if (t.dataset.vista === 'menu') cargarMenu();
     });
   });
@@ -549,6 +575,56 @@ HORARIO: martes a domingo, 12pm a 10pm"></textarea>
 
   function cerrarPanel(){ $('fondo').classList.remove('abierto'); }
   $('fondo').addEventListener('click', function(e){ if (e.target === $('fondo')) cerrarPanel(); });
+
+  // ---------------- Reservas ----------------
+  // Agenda del día: incluye lo que se agendó desde ayer (o antes) para hoy —
+  // el filtro por fecha real de la reserva ya lo hace el backend.
+  function cargarReservas(){
+    return api('/reservations?client_id='+clientId).then(function(j){
+      pintarAgenda(j.data || []);
+    }).catch(function(e){ avisar(e.message); });
+  }
+
+  function pintarAgenda(reservas){
+    var cont = $('agenda');
+    cont.innerHTML = '';
+
+    if (!reservas.length) {
+      cont.innerHTML = '<div class="vacio">No hay reservas para hoy.</div>';
+    } else {
+      reservas.forEach(function(r){ cont.appendChild(tarjetaReserva(r)); });
+    }
+
+    var b = $('badgeReservas');
+    b.textContent = reservas.length;
+    b.hidden = reservas.length === 0;
+  }
+
+  function horaReserva(iso){
+    if (!iso) return '--:--';
+    var d = new Date(iso.replace(' ','T') + (iso.indexOf('Z')<0?'Z':''));
+    return d.toLocaleTimeString('es-CO', {hour:'2-digit', minute:'2-digit'});
+  }
+
+  function tarjetaReserva(r){
+    var el = document.createElement('div');
+    el.className = 'reserva' + (r.status === 'cancelada' ? ' cancelada' : '');
+
+    var detalle = [];
+    if (r.party_size) detalle.push(r.party_size + ' personas');
+    if (r.customer_phone) detalle.push(r.customer_phone);
+    if (r.notes) detalle.push(esc(r.notes));
+
+    el.innerHTML =
+      '<div class="hora">'+horaReserva(r.scheduled_at)+'</div>'+
+      '<div class="info">'+
+        '<div class="quien">'+esc(r.customer_name || 'Sin nombre')+'</div>'+
+        (detalle.length ? '<div class="detalle">'+detalle.join(' · ')+'</div>' : '')+
+      '</div>'+
+      '<span class="estado'+(r.status==='pendiente'?' pendiente':'')+'">'+esc(r.status)+'</span>';
+
+    return el;
+  }
 
   // ---------------- Chats ----------------
   function cargarChats(){
