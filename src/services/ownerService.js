@@ -1,5 +1,8 @@
+const axios = require('axios');
 const { dbAll } = require('../config/database');
 const logger = require('../utils/logger');
+
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
 /**
  * Autorización por número de WhatsApp y atajos operativos para el dueño.
@@ -49,15 +52,14 @@ const MENSAJE_NO_AUTORIZADO =
 /**
  * ¿Están pidiendo CAMBIAR el menú o los precios (no solo preguntar por ellos)?
  *
- * Esto se rechaza para TODOS, incluido el dueño autorizado — no es lo mismo
- * que inventario/reservas/pedidos, donde al dueño sí se le abre la consulta.
- * Mutar el catálogo con texto libre por WhatsApp es exactamente el tipo de
- * error caro que un "creo que entendí bien" no debería poder causar; para eso
- * ya existe una pestaña dedicada en la tablet ("Menú e info").
+ * Igual que inventario/reservas/pedidos: SOLO el dueño autorizado puede
+ * pedirlo. La diferencia es que aquí sí se ejecuta (ver `aplicarCambioMenu`)
+ * en vez de solo consultar — cualquier otro número lo tiene bloqueado de
+ * forma fija, sin excepción.
  *
  * A propósito NO incluye "plan": "quiero cambiar de plan" es un cliente
  * pidiendo cambiar SU suscripción, una conversación legítima que el asistente
- * sí debe poder tener — muy distinto de editar el catálogo de planes.
+ * sí debe poder tener — muy distinto de editar el menú del negocio.
  */
 const esSolicitudDeEdicion = (texto) => {
   const t = normalizar(texto);
@@ -65,8 +67,74 @@ const esSolicitudDeEdicion = (texto) => {
   return /\b(cambiar?|actualizar?|modificar?|edita[r]?|sub[ei][r]?)\b[\s\S]{0,25}\b(menu|precio|precios)\b/.test(t);
 };
 
-const MENSAJE_USA_TABLET =
-  'Los cambios de menú, precios o planes se hacen directo desde la tablet del negocio, en "Menú e info" — así queda todo controlado y sin errores. Por aquí no los puedo modificar 🙌';
+const MENSAJE_EDICION_NO_AUTORIZADA =
+  'Los cambios de menú o precios solo los puede pedir el encargado del negocio — no estamos autorizados para hacerlos por aquí 🙌';
+
+/**
+ * Aplica un cambio de menú/precios que pidió el DUEÑO, en lenguaje natural,
+ * sobre el conocimiento previo de su propio negocio (`bot_configs.knowledge_base`
+ * — el menú, precios y datos que el bot usa para responder a sus clientes).
+ *
+ * Deliberadamente solo toca `knowledge_base`, nunca `plans` (los planes de
+ * MERIDIANTECH, que sí facturan de verdad vía Bold) — lo que el dueño de un
+ * restaurante puede cambiar es SU menú, no lo que Meridian le cobra a él.
+ *
+ * Se le pide al modelo el texto COMPLETO de vuelta (no un parche) para no
+ * arriesgarse a un merge mal hecho, y un resumen corto para que el dueño vea
+ * de inmediato si se entendió bien — si no, lo corrige con otro mensaje.
+ */
+const aplicarCambioMenu = async (clientId, config, instruccion) => {
+  if (!GEMINI_API_KEY) {
+    return { ok: false, mensaje: 'No puedo hacer ese cambio ahora mismo — hazlo desde la tablet mientras tanto.' };
+  }
+
+  try {
+    const { data } = await axios.post(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent?key=${GEMINI_API_KEY}`,
+      {
+        systemInstruction: { parts: [{
+          text: 'Mantienes actualizado el conocimiento previo de un negocio (menú, precios, horarios, datos que el bot usa para responder a sus clientes). ' +
+            'Te dan el texto actual y un pedido de cambio en lenguaje natural del dueño. Devuelve el texto COMPLETO ya actualizado, aplicando SOLO lo que pidió, ' +
+            'sin borrar ni inventar nada más, conservando el mismo formato y estilo del original. Si el pedido es ambiguo o no se puede aplicar con lo que hay, ' +
+            'no inventes: dilo en el resumen y deja el conocimiento sin cambios.'
+        }] },
+        contents: [{
+          role: 'user',
+          parts: [{ text: `CONOCIMIENTO ACTUAL:\n${config.knowledge_base || '(vacío)'}\n\nPEDIDO DEL DUEÑO: "${instruccion}"` }]
+        }],
+        generationConfig: {
+          responseMimeType: 'application/json',
+          responseSchema: {
+            type: 'OBJECT',
+            properties: {
+              nuevo_conocimiento: { type: 'STRING' },
+              resumen: { type: 'STRING' },
+              aplicado: { type: 'BOOLEAN' }
+            },
+            required: ['nuevo_conocimiento', 'resumen', 'aplicado']
+          },
+          temperature: 0
+        }
+      },
+      { headers: { 'Content-Type': 'application/json' }, timeout: 20000 }
+    );
+
+    const bruto = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (!bruto) return { ok: false, mensaje: 'No pude procesar ese cambio — hazlo desde la tablet mientras tanto.' };
+
+    const parsed = JSON.parse(bruto);
+    if (!parsed.aplicado || !parsed.nuevo_conocimiento) {
+      return { ok: false, mensaje: parsed.resumen || 'No entendí bien el cambio — ¿me lo explicas de otra forma?' };
+    }
+
+    return { ok: true, nuevoConocimiento: parsed.nuevo_conocimiento, resumen: parsed.resumen };
+  } catch (error) {
+    logger.warn('Fallo aplicando cambio de menú por WhatsApp', {
+      clientId, error: error.response?.data?.error?.message || error.message
+    });
+    return { ok: false, mensaje: 'Tuve un problema aplicando ese cambio — hazlo desde la tablet mientras tanto.' };
+  }
+};
 
 /** ¿Pregunta por los pedidos/órdenes de hoy? */
 const esConsultaPedidos = (texto) => {
@@ -131,7 +199,8 @@ module.exports = {
   esTemaRestringido,
   MENSAJE_NO_AUTORIZADO,
   esSolicitudDeEdicion,
-  MENSAJE_USA_TABLET,
+  MENSAJE_EDICION_NO_AUTORIZADA,
+  aplicarCambioMenu,
   esConsultaPedidos,
   esConsultaReservas,
   resumenPedidosHoy,

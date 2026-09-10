@@ -190,12 +190,24 @@ async function processMessage(clientId, msg) {
   const config = await geminiService.getBotConfig(clientId);
   const esDueno = ownerService.esDueno(config, msg.end_customer_id);
 
-  // Cambiar menú, precios o plan por WhatsApp se rechaza para TODOS, dueño
-  // incluido: para eso existe la pestaña "Menú e info" de la tablet, que sí
-  // guarda el cambio de forma controlada. Por texto libre no.
+  // Cambiar menú o precios por WhatsApp: SOLO el dueño autorizado puede
+  // pedirlo, y ahí sí se ejecuta de una — cualquier otro número lo tiene
+  // bloqueado de forma fija, sin excepción.
   if (ownerService.esSolicitudDeEdicion(msg.text)) {
-    logger.info('Solicitud de edición de menú/precios/plan redirigida a la tablet', { conversationId: conversation.id, esDueno });
-    await responderDirecto(clientId, conversation, msg, ownerService.MENSAJE_USA_TABLET);
+    if (!esDueno) {
+      logger.info('Solicitud de edición de menú/precios rechazada: no es el dueño', { conversationId: conversation.id });
+      await responderDirecto(clientId, conversation, msg, ownerService.MENSAJE_EDICION_NO_AUTORIZADA);
+      return;
+    }
+
+    const cambio = await ownerService.aplicarCambioMenu(clientId, config, msg.text);
+    if (cambio.ok) {
+      await geminiService.upsertBotConfig(clientId, { knowledge_base: cambio.nuevoConocimiento });
+      logger.info('El dueño actualizó el menú/precios por WhatsApp', { conversationId: conversation.id, resumen: cambio.resumen });
+      await responderDirecto(clientId, conversation, msg, `Listo ✅ ${cambio.resumen}`);
+    } else {
+      await responderDirecto(clientId, conversation, msg, cambio.mensaje);
+    }
     return;
   }
 
