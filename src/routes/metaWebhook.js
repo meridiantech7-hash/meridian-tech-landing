@@ -238,10 +238,12 @@ async function processMessage(clientId, msg) {
     incoming.text = shownText;
   }
 
-  const { handoff, reply } = await geminiService.generateBotResponse(
+  const { handoff, reply, memoryNote } = await geminiService.generateBotResponse(
     clientId,
     history.slice(0, -1),
-    incoming
+    incoming,
+    null,
+    { customerNotes: conversation.customer_notes }
   );
 
   if (handoff) {
@@ -337,6 +339,15 @@ async function processMessage(clientId, msg) {
   logger.info('Respuesta del bot generada y despachada', {
     conversationId: conversation.id, canal: msg.channel_type, entregado: dispatch.sent
   });
+
+  // Memoria del cliente: si el modelo reportó un dato nuevo en esta misma
+  // respuesta, se guarda para que la próxima vez (aunque se salga de la
+  // ventana de mensajes recientes) el bot lo siga sabiendo.
+  if (memoryNote) {
+    const notasActualizadas = geminiService.mergeMemoryNote(conversation.customer_notes, memoryNote);
+    await dbRun('UPDATE conversations SET customer_notes = ? WHERE id = ?', [notasActualizadas, conversation.id]);
+    logger.info('Memoria del cliente actualizada', { conversationId: conversation.id, nota: memoryNote });
+  }
 
   // Después de responder, se revisa si en la conversación quedó un pedido.
   // Va al final y sin await del cliente final a propósito: si esto falla o

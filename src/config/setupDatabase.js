@@ -15,6 +15,12 @@ const migrations = [
   // aplica — ver seedInternal.js — para no gastar una llamada de IA completa
   // extrayendo "pedidos" de una conversación de venta que nunca los tiene.
   "ALTER TABLE bot_configs ADD COLUMN takes_orders INTEGER DEFAULT 1",
+  // "Memoria" del cliente final: notas persistentes por conversación (que ya
+  // es única por client_id+channel_type+end_customer_id, o sea por persona)
+  // para que el bot siga sonando familiar aunque el dato se haya salido de la
+  // ventana de los últimos 20 mensajes. No agrega ninguna llamada de IA nueva
+  // — se rellena con lo que el mismo modelo ya devuelve en su respuesta normal.
+  "ALTER TABLE conversations ADD COLUMN customer_notes TEXT",
   // El modelo guardado por cliente manda sobre el valor por defecto del código,
   // así que cambiar la constante no basta: hay que mover a los que ya existen.
   // Se migran solo los modelos que se midieron lentos o que dejaron de estar
@@ -163,6 +169,7 @@ CREATE TABLE IF NOT EXISTS conversations (
   channel_type TEXT NOT NULL,             -- whatsapp | instagram | messenger
   end_customer_id TEXT NOT NULL,          -- teléfono o external id del cliente final
   end_customer_name TEXT,
+  customer_notes TEXT,                    -- "memoria" acumulada: datos del cliente que el bot ya aprendió (nombre, negocio, preferencias)
   mode TEXT DEFAULT 'bot',                -- bot | human | paused
   status TEXT DEFAULT 'open',             -- open | closed
   last_message_at DATETIME,

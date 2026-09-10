@@ -168,7 +168,21 @@ const detectHandoffKeyword = (text, customKeywords = []) => {
   return all.find(kw => lower.includes(kw.toLowerCase())) || null;
 };
 
-const buildSystemInstruction = (config) => {
+/**
+ * Marca con la que el modelo reporta, en su propia respuesta, un dato nuevo
+ * de memoria — ver `extraerMemoria` más abajo.
+ */
+const ETIQUETA_MEMORIA = /\n?MEMORIA:\s*(.+?)\s*$/is;
+
+/**
+ * "Memoria" del cliente = lo mínimo para que suene como alguien que ya lo
+ * conoce, sin gastar una llamada de IA aparte: se arma con lo que ya sabemos
+ * gratis (nombre, `customer_notes` acumulado) y se le pide al mismo modelo
+ * que, en la misma respuesta que ya le iba a dar al cliente, reporte al final
+ * cualquier dato nuevo que haya aprendido — una única línea que el servidor
+ * recorta antes de despachar el mensaje (ver `extraerMemoria`).
+ */
+const buildSystemInstruction = (config, memoria = {}) => {
   let instruction = config.system_prompt || '';
 
   try {
@@ -182,9 +196,52 @@ const buildSystemInstruction = (config) => {
     instruction += '\n\nConocimiento previo del negocio (úsalo para responder con precisión, no inventes datos que no estén aquí):\n' + config.knowledge_base;
   }
 
+  if (memoria.customerNotes) {
+    instruction += `\n\nMEMORIA QUE YA TIENES DE ESTE CLIENTE (ya se conocen — suena familiar, no repitas preguntas que esto ya responde, no lo saludes como si fuera la primera vez):\n${memoria.customerNotes}`;
+  }
+
   instruction += '\n\nSi el cliente pide explícitamente hablar con una persona, muestra frustración clara, o hace una pregunta que no puedes responder con el conocimiento previo, dilo honestamente y no inventes una respuesta.';
 
+  instruction += '\n\nDespués de tu respuesta al cliente, si en ESTE mensaje aprendiste algo nuevo y útil de él (su nombre, su tipo de negocio, una preferencia, algo importante que contó), agrega una línea aparte al final que empiece exactamente con "MEMORIA:" seguida del dato en máximo 12 palabras. Si no aprendiste nada nuevo, no agregues esa línea. Es solo para el sistema — el cliente jamás la ve, así que nunca la menciones ni te disculpes por ella.';
+
   return instruction;
+};
+
+/**
+ * Separa la línea "MEMORIA: ..." (si el modelo la agregó) del texto que sí
+ * debe llegarle al cliente. Se aplica siempre, aunque el modelo no la haya
+ * usado — así un despiste del modelo nunca deja esa etiqueta filtrarse a
+ * WhatsApp.
+ */
+const extraerMemoria = (textoCrudo) => {
+  const texto = textoCrudo || '';
+  const match = texto.match(ETIQUETA_MEMORIA);
+  if (!match) return { reply: texto.trim(), nota: null };
+
+  const nota = match[1].trim().replace(/^["']|["']$/g, '');
+  const reply = texto.slice(0, match.index).trim();
+  return { reply: reply || texto.trim(), nota: nota && nota !== '-' ? nota : null };
+};
+
+/**
+ * Suma una nota nueva a la memoria ya acumulada de un cliente, sin dejarla
+ * crecer para siempre ni repetir lo mismo dos veces.
+ */
+const MEMORIA_MAX_NOTAS = 8;
+const mergeMemoryNote = (notasExistentes, notaNueva) => {
+  if (!notaNueva) return notasExistentes || null;
+
+  const lista = (notasExistentes || '')
+    .split('\n')
+    .map((n) => n.trim())
+    .filter(Boolean);
+
+  const yaEstaba = lista.some((n) => n.toLowerCase() === notaNueva.toLowerCase());
+  if (yaEstaba) return notasExistentes;
+
+  lista.push(notaNueva);
+  // Las más viejas se descartan primero: lo más útil suele ser lo reciente.
+  return lista.slice(-MEMORIA_MAX_NOTAS).join('\n');
 };
 
 /**
@@ -231,7 +288,7 @@ const listarModelos = async () => {
   return { configurada: true, total: modelos.length, modelos };
 };
 
-const generateBotResponse = async (clientId, conversationHistory, incoming, modeloForzado = null) => {
+const generateBotResponse = async (clientId, conversationHistory, incoming, modeloForzado = null, memoria = {}) => {
   const config = await getBotConfig(clientId);
 
   // 1. Derivación por palabra clave (no gasta tokens de IA si ya sabemos que hay que derivar)
@@ -241,7 +298,7 @@ const generateBotResponse = async (clientId, conversationHistory, incoming, mode
     const matched = detectHandoffKeyword(incoming.text, customKeywords);
     if (matched) {
       logger.info('Derivación a humano por palabra clave', { clientId, matched });
-      return { handoff: `keyword: "${matched}"`, reply: null };
+      return { handoff: `keyword: "${matched}"`, reply: null, memoryNote: null };
     }
   }
 
@@ -249,7 +306,8 @@ const generateBotResponse = async (clientId, conversationHistory, incoming, mode
     logger.warn('GEMINI_API_KEY no configurada — nodo de IA en modo simulación', { clientId });
     return {
       handoff: null,
-      reply: '[Simulación — falta configurar GEMINI_API_KEY] Respuesta automática pendiente de activar.'
+      reply: '[Simulación — falta configurar GEMINI_API_KEY] Respuesta automática pendiente de activar.',
+      memoryNote: null
     };
   }
 
@@ -264,7 +322,7 @@ const generateBotResponse = async (clientId, conversationHistory, incoming, mode
   }
 
   const contents = buildContents(conversationHistory, newMessagePart);
-  const systemInstruction = { parts: [{ text: buildSystemInstruction(config) }] };
+  const systemInstruction = { parts: [{ text: buildSystemInstruction(config, memoria) }] };
 
   // Cuando se fuerza un modelo (diagnóstico) se prueba solo ese, para que la
   // medición sea del modelo pedido y no de un respaldo.
@@ -284,9 +342,18 @@ const generateBotResponse = async (clientId, conversationHistory, incoming, mode
         generationConfig: GENERACION
       });
 
-      const reply = response.data?.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (!reply) {
+      const crudo = response.data?.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (!crudo) {
         logger.warn('Gemini no devolvió texto utilizable', { clientId, model });
+        ultimoError = new Error('sin texto');
+        continue;
+      }
+
+      const { reply, nota } = extraerMemoria(crudo);
+      if (!reply) {
+        // El modelo respondió solo con la línea de memoria y nada para el
+        // cliente — pasa a probar el siguiente modelo en vez de mandar vacío.
+        logger.warn('Gemini no devolvió texto para el cliente tras quitar la memoria', { clientId, model });
         ultimoError = new Error('sin texto');
         continue;
       }
@@ -294,9 +361,9 @@ const generateBotResponse = async (clientId, conversationHistory, incoming, mode
       if (model !== principal) {
         logger.warn('Respondió un modelo de respaldo', { clientId, principal, model });
       } else {
-        logger.info('Respuesta del bot generada', { clientId, model });
+        logger.info('Respuesta del bot generada', { clientId, model, memoriaNueva: !!nota });
       }
-      return { handoff: null, reply };
+      return { handoff: null, reply, memoryNote: nota };
     } catch (error) {
       ultimoError = error;
       logger.warn('Modelo falló, probando el siguiente si queda', {
@@ -311,7 +378,7 @@ const generateBotResponse = async (clientId, conversationHistory, incoming, mode
     probados: aProbar,
     error: ultimoError?.response?.data || ultimoError?.message
   });
-  return { handoff: 'error de IA', reply: null };
+  return { handoff: 'error de IA', reply: null, memoryNote: null };
 };
 
 /**
@@ -467,5 +534,6 @@ module.exports = {
   getBotConfig,
   upsertBotConfig,
   detectHandoffKeyword,
-  listarModelos
+  listarModelos,
+  mergeMemoryNote
 };
