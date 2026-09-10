@@ -78,8 +78,41 @@
     border-left:5px solid var(--cerrado);text-align:left;width:100%;
   }
   .orden:active{background:#2a3542}
-  .orden .fila1{display:flex;align-items:baseline;gap:10px}
-  .orden .num{font-size:22px;font-weight:800;font-variant-numeric:tabular-nums}
+
+  /* Pedido pagado que lleva demasiado en cola.
+     El color se toma la tarjeta completa, no un puntico: esta pantalla se lee
+     desde el otro lado de la cocina y de reojo. El latido es lento y sin
+     brillos: tiene que llamar la atención sin volverse un adorno del que uno
+     deja de darse cuenta a los diez minutos. Se respeta a quien pidió menos
+     movimiento en el sistema. */
+  .orden.alarma{
+    background:#4a1d1d;border-left-color:#ff4d4d;
+    animation:latido-alarma 2.4s ease-in-out infinite;
+  }
+  .orden.alarma:active{background:#5a2323}
+  .orden.alarma .quien,
+  .orden.alarma .mod{color:#ffc9c9}
+  @keyframes latido-alarma{
+    0%,100%{box-shadow:0 0 0 0 rgba(255,77,77,0)}
+    50%{box-shadow:0 0 0 3px rgba(255,77,77,.5)}
+  }
+  @media (prefers-reduced-motion:reduce){
+    .orden.alarma{animation:none;box-shadow:0 0 0 2px rgba(255,77,77,.6)}
+  }
+  .orden .pagado{
+    font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.6px;
+    color:#0b141a;background:var(--listo);padding:2px 7px;border-radius:5px;
+  }
+  .orden .hace.urgente{color:#ff8a8a;font-weight:700}
+
+  /* La fila puede llevar hasta tres etiquetas (IA, pagado, modalidad) y en una
+     columna de 300px se apretaba tanto que partía el número del pedido en dos
+     líneas. El número es lo que se grita en la cocina: nunca se parte. */
+  .orden .fila1{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+  .orden .num{
+    font-size:22px;font-weight:800;font-variant-numeric:tabular-nums;
+    white-space:nowrap;flex:none;
+  }
   .orden .mod{
     font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;
     color:var(--muted);margin-left:auto
@@ -284,6 +317,42 @@
     font-size:14px;text-align:center;
   }
 
+  /* ---------- Canal con Meridian ----------
+     Misma paleta de la mensajería, porque es la misma acción: hablarle a
+     alguien. Al lado queda el conocimiento como está quedando, para que el
+     cambio se vea aplicado y nadie tenga que confiar a ciegas. */
+  #vista-menu{
+    --wa-fondo:#0b141a; --wa-entra:#202c33; --wa-sale:#005c4b;
+    --wa-texto:#e9edef; --wa-tenue:#8696a0; --wa-campo:#2a3942; --wa-verde:#00a884;
+  }
+  .canal{display:flex;width:100%;min-height:0}
+  .canal-chat{flex:1;display:flex;flex-direction:column;min-width:0}
+  .canal-estado{
+    flex:0 0 340px;border-left:1px solid var(--line);background:var(--surface);
+    padding:16px;overflow-y:auto;
+  }
+  .canal-t{
+    font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.7px;
+    color:var(--muted);margin-bottom:8px;
+  }
+  .kb-vista{
+    background:var(--bg);border:1px solid var(--line);border-radius:10px;
+    padding:12px;margin:0;font-size:13px;line-height:1.5;color:var(--text);
+    white-space:pre-wrap;word-wrap:break-word;max-height:46vh;overflow-y:auto;
+    font-family:var(--font);
+  }
+  .fila-umbral{display:flex;align-items:center;gap:9px;margin-top:9px}
+  .fila-umbral input{
+    width:84px;padding:11px;border-radius:9px;border:1px solid var(--line);
+    background:var(--bg);color:var(--text);text-align:center;
+    font-variant-numeric:tabular-nums;
+  }
+  .fila-umbral span{color:var(--muted);font-size:14px}
+  @media (max-width:1000px){
+    .canal{flex-direction:column}
+    .canal-estado{flex:none;border-left:none;border-top:1px solid var(--line);max-height:40vh}
+  }
+
   /* ---------- Menú / info ---------- */
   .menu-vista{flex:1;overflow-y:auto;padding:20px;max-width:900px;margin:0 auto;width:100%}
   .campo{margin-bottom:20px}
@@ -367,7 +436,7 @@
     <button class="tab" role="tab" aria-selected="false" data-vista="reservas">
       Reservas <span class="badge" id="badgeReservas" hidden>0</span>
     </button>
-    <button class="tab" role="tab" aria-selected="false" data-vista="menu">Menú e info</button>
+    <button class="tab" role="tab" aria-selected="false" data-vista="menu">Ajustes</button>
   </nav>
   <div class="derecha">
     <button class="btn ok" id="btnInstalar" hidden style="min-height:40px;padding:8px 14px">⬇ Instalar app</button>
@@ -410,34 +479,39 @@
   </section>
 
   <!-- ================= MENÚ ================= -->
+  <!-- Canal con Meridian: se le pide el cambio escribiendo, como a un
+       compañero. El bloque de conocimiento queda visible al lado para ver el
+       resultado, pero ya no se edita a mano. -->
   <section class="vista" id="vista-menu">
-    <div class="menu-vista">
-      <div class="campo">
-        <label for="kb">Menú, precios y datos del negocio</label>
-        <div class="ayuda">
-          Todo lo que escribas aquí es lo que el bot sabe y usa para responder y para
-          armar los pedidos. Escríbelo como se lo explicarías a un empleado nuevo.
+    <div class="canal">
+      <div class="canal-chat">
+        <div class="conver-cab">
+          <div class="centro">
+            <div class="quien">Meridian</div>
+            <div style="color:var(--muted);font-size:13px">Pídele los cambios de menú, precios o inventario</div>
+          </div>
         </div>
-        <textarea id="kb" placeholder="Ej.
-HAMBURGUESAS
-- Clásica: $18.000
-- Doble carne: $25.000
-
-DOMICILIOS
-- Floridablanca: $5.000
-- Bucaramanga centro: $8.000
-
-HORARIO: martes a domingo, 12pm a 10pm"></textarea>
+        <div class="mensajes" id="ajustes"></div>
+        <div id="zonaAjuste">
+          <form class="escribir" id="formAjuste">
+            <input id="txtAjuste" placeholder="Ej: subió la gaseosa a 4.000" autocomplete="off">
+            <button class="enviar" type="submit" id="btnAjuste" aria-label="Enviar ajuste" disabled>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 21.5 22 12 2.5 2.5 2.5 9.8 16.2 12 2.5 14.2z"/></svg>
+            </button>
+          </form>
+        </div>
       </div>
-      <div class="campo">
-        <label for="reglas">Reglas de atención</label>
-        <div class="ayuda">Cómo debe comportarse. Ej: "Nunca prometas tiempos menores a 40 minutos."</div>
-        <textarea id="reglas" style="min-height:130px"></textarea>
-      </div>
-      <div class="acc-grid">
-        <button class="btn ok" id="btnGuardarMenu">Guardar cambios</button>
-        <button class="btn" id="btnRecargarMenu">Descartar</button>
-      </div>
+      <aside class="canal-estado">
+        <div class="canal-t">Lo que el bot sabe hoy</div>
+        <pre id="kbVista" class="kb-vista">cargando…</pre>
+        <div class="canal-t" style="margin-top:18px">Alarma de cocina</div>
+        <div class="ayuda">A los cuántos minutos un pedido <b>pagado</b> y sin entregar se pone en rojo.</div>
+        <div class="fila-umbral">
+          <input id="umbral" type="number" min="1" max="240" step="1">
+          <span>minutos</span>
+          <button class="btn ok" id="btnUmbral">Guardar</button>
+        </div>
+      </aside>
     </div>
   </section>
 </main>
@@ -466,6 +540,9 @@ HORARIO: martes a domingo, 12pm a 10pm"></textarea>
   var token = localStorage.getItem('mt_token');
   var clientId = localStorage.getItem('mt_client');
   var ordenes = [], chats = [], chatActivo = null, mensajes = [], socket = null;
+  // Minutos que un pedido pagado puede esperar antes de la alarma. Lo define
+  // cada negocio en su configuración; 15 mientras no se haya cargado.
+  var alertaMinutos = 15;
 
   var $ = function(id){ return document.getElementById(id); };
 
@@ -600,6 +677,23 @@ HORARIO: martes a domingo, 12pm a 10pm"></textarea>
     b.hidden = porConfirmar === 0;
   }
 
+  /* Minutos que lleva un pedido pagado esperando, o null si no está pagado.
+     El reloj arranca en paid_at a propósito: un pedido sin pagar puede
+     esperar, uno pagado que lleva media hora en cola es un cliente molesto. */
+  function minutosEsperando(o){
+    if (!o.paid_at) return null;
+    if (o.status === 'entregado' || o.status === 'cancelado') return null;
+    var t = new Date(String(o.paid_at).replace(' ', 'T') +
+      (String(o.paid_at).indexOf('Z') < 0 ? 'Z' : '')).getTime();
+    if (isNaN(t)) return null;
+    return Math.floor((Date.now() - t) / 60000);
+  }
+
+  function estaEnAlarma(o){
+    var m = minutosEsperando(o);
+    return m !== null && m >= alertaMinutos;
+  }
+
   function tarjeta(o, color){
     var el = document.createElement('button');
     el.className = 'orden';
@@ -610,14 +704,26 @@ HORARIO: martes a domingo, 12pm a 10pm"></textarea>
              (i.notas ? ' <span style="color:var(--muted)">('+esc(i.notas)+')</span>' : '')+'</span></li>';
     }).join('');
 
+    var espera = minutosEsperando(o);
+    var alarma = estaEnAlarma(o);
+    if (alarma) el.className = 'orden alarma';
+    el.dataset.orden = o.id;
+
     el.innerHTML =
       '<div class="fila1"><span class="num">'+esc(o.order_number||o.id)+'</span>'+
       (o.source === 'bot' ? '<span class="ia">IA</span>' : '')+
+      (o.paid_at ? '<span class="pagado">pagado</span>' : '')+
       '<span class="mod">'+esc(o.modality||'')+'</span></div>'+
       '<div class="quien">'+esc(o.customer_name || o.customer_phone || 'Sin nombre')+'</div>'+
       (lis ? '<ul>'+lis+'</ul>' : '')+
       '<div class="pie"><span class="total">'+pesos(o.total)+'</span>'+
-      '<span class="hace">'+hace(o.created_at)+'</span></div>';
+      // Cuando está pagado se muestra la espera desde el pago, que es el dato
+      // que importa en la cocina; si no, cuánto lleva desde que entró.
+      '<span class="hace'+(alarma ? ' urgente' : '')+'">'+
+        (espera !== null
+          ? (alarma ? '⏱ ' : '') + espera + ' min esperando'
+          : hace(o.created_at))+
+      '</span></div>';
 
     el.addEventListener('click', function(){ abrirOrden(o); });
     return el;
@@ -638,6 +744,9 @@ HORARIO: martes a domingo, 12pm a 10pm"></textarea>
     }
     if (o.conversation_id) {
       acciones += '<button class="btn" data-acc="chat">Ver el chat</button>';
+    }
+    if (!o.paid_at && o.status !== 'cancelado') {
+      acciones += '<button class="btn ok" data-acc="pagado">Ya está pagado</button>';
     }
     if (o.status !== 'cancelado' && o.status !== 'entregado') {
       acciones += '<button class="btn peligro" data-acc="cancelar">Cancelar orden</button>';
@@ -677,6 +786,12 @@ HORARIO: martes a domingo, 12pm a 10pm"></textarea>
 
       b.disabled = true;
       var p;
+      if (acc === 'pagado') {
+        api('/orders/'+o.id+'/pagado', {method:'POST', body:JSON.stringify({})})
+          .then(function(){ avisar('Pago registrado. El reloj de cocina arrancó.'); cerrarPanel(); })
+          .catch(function(e){ avisar(e.message); });
+        return;
+      }
       if (acc === 'confirmar') {
         p = api('/orders/'+o.id+'/confirm', {method:'POST'});
       } else if (acc === 'avanzar') {
@@ -1000,22 +1115,110 @@ HORARIO: martes a domingo, 12pm a 10pm"></textarea>
   }
 
   // ---------------- Menú ----------------
+  /* El canal guarda su conversación en el equipo, no en el servidor: es una
+     ayuda para ver qué se pidió en el turno, no un registro contable. Lo que
+     sí queda guardado en el servidor es el efecto del cambio. */
+  var ajustes = [];
+  try { ajustes = JSON.parse(localStorage.getItem('mt_ajustes_' + clientId) || '[]'); } catch(e){ ajustes = []; }
+
+  function guardarAjustes(){
+    try { localStorage.setItem('mt_ajustes_' + clientId, JSON.stringify(ajustes.slice(-40))); } catch(e){}
+  }
+
+  function pintarAjustes(){
+    var c = $('ajustes');
+    if (!ajustes.length) {
+      c.innerHTML = '<div class="vacio">Escríbele el cambio como se lo dirías a un compañero.<br>' +
+        'Ej: "subió la gaseosa a 4.000", "se acabó el pollo", "el domicilio a Cañaveral vale 7.000".</div>';
+      return;
+    }
+    c.innerHTML = '';
+    ajustes.forEach(function(m, i){
+      var mio = m.de === 'yo';
+      var q = document.createElement('div');
+      q.className = 'quien-habla ' + (mio ? 'der' : 'izq');
+      q.textContent = mio ? 'Tú' : 'Meridian';
+      c.appendChild(q);
+
+      var b = document.createElement('div');
+      b.className = 'burbuja primera ' + (mio ? 'der' : 'izq');
+      var t = document.createElement('span');
+      t.className = 'txt';
+      t.textContent = m.texto;
+      b.appendChild(t);
+      var h = document.createElement('span');
+      h.className = 'hora' + (m.aplicado === false ? ' falla' : '');
+      h.textContent = m.hora || '';
+      b.appendChild(h);
+      c.appendChild(b);
+    });
+    c.scrollTop = c.scrollHeight;
+  }
+
   function cargarMenu(){
+    pintarAjustes();
     api('/bot-config/'+clientId).then(function(j){
-      $('kb').value = j.data.knowledge_base || '';
-      var r = j.data.business_rules;
-      $('reglas').value = typeof r === 'string' ? r : (r && r.texto) || '';
+      $('kbVista').textContent = j.data.knowledge_base || '(todavía sin información del negocio)';
+      $('umbral').value = j.data.alerta_pedido_minutos || 15;
+      if (j.data.alerta_pedido_minutos) alertaMinutos = Number(j.data.alerta_pedido_minutos);
     }).catch(function(e){ avisar(e.message); });
   }
-  $('btnRecargarMenu').addEventListener('click', cargarMenu);
-  $('btnGuardarMenu').addEventListener('click', function(){
-    var b = this; b.disabled = true; b.textContent = 'Guardando...';
-    api('/bot-config/'+clientId, {
-      method:'PUT',
-      body: JSON.stringify({ knowledge_base: $('kb').value, business_rules: { texto: $('reglas').value } })
-    }).then(function(){ avisar('Guardado. El bot ya está usando esta información.'); })
+
+  $('txtAjuste').oninput = function(){ $('btnAjuste').disabled = !this.value.trim(); };
+
+  $('formAjuste').addEventListener('submit', function(ev){
+    ev.preventDefault();
+    var txt = $('txtAjuste').value.trim();
+    if (!txt) return;
+    var ahora = new Date().toLocaleTimeString('es-CO', {hour:'numeric', minute:'2-digit'});
+
+    ajustes.push({ de:'yo', texto:txt, hora:ahora });
+    guardarAjustes(); pintarAjustes();
+    $('txtAjuste').value = '';
+    $('btnAjuste').disabled = true;
+
+    // Se muestra que está trabajando: aplicar el cambio pasa por el modelo y
+    // tarda un segundo o dos. Sin esto parece que no pasó nada.
+    ajustes.push({ de:'meridian', texto:'Déjame revisarlo…', hora:ahora, pendiente:true });
+    pintarAjustes();
+
+    api('/bot-config/'+clientId+'/ajuste', { method:'POST', body: JSON.stringify({ instruccion: txt }) })
+      .then(function(j){
+        var d = j.data || {};
+        // se reemplaza el "déjame revisarlo" por la respuesta de verdad
+        for (var i = ajustes.length - 1; i >= 0; i--) {
+          if (ajustes[i].pendiente) { ajustes.splice(i, 1); break; }
+        }
+        ajustes.push({
+          de:'meridian',
+          texto: (d.aplicado ? '✅ ' : '') + (d.respuesta || 'No entendí ese cambio.'),
+          hora: new Date().toLocaleTimeString('es-CO', {hour:'numeric', minute:'2-digit'}),
+          aplicado: !!d.aplicado
+        });
+        guardarAjustes(); pintarAjustes();
+        if (d.aplicado && d.conocimiento) $('kbVista').textContent = d.conocimiento;
+      })
+      .catch(function(e){
+        for (var i = ajustes.length - 1; i >= 0; i--) {
+          if (ajustes[i].pendiente) { ajustes.splice(i, 1); break; }
+        }
+        ajustes.push({ de:'meridian', texto:'No se pudo aplicar: ' + e.message, hora:ahora, aplicado:false });
+        guardarAjustes(); pintarAjustes();
+      });
+  });
+
+  $('btnUmbral').addEventListener('click', function(){
+    var m = Number($('umbral').value);
+    if (!m || m < 1 || m > 240) return avisar('Pon un número entre 1 y 240 minutos.');
+    var b = this; b.disabled = true;
+    api('/bot-config/'+clientId, { method:'PUT', body: JSON.stringify({ alerta_pedido_minutos: m }) })
+      .then(function(){
+        alertaMinutos = m;
+        pintarTablero();
+        avisar('Listo. Los pedidos pagados se ponen en rojo a los ' + m + ' minutos.');
+      })
       .catch(function(e){ avisar(e.message); })
-      .then(function(){ b.disabled = false; b.textContent = 'Guardar cambios'; });
+      .then(function(){ b.disabled = false; });
   });
 
   // ---------------- Tiempo real ----------------
@@ -1040,6 +1243,18 @@ HORARIO: martes a domingo, 12pm a 10pm"></textarea>
       ordenes.unshift(o); pintarTablero();
       avisar('Nueva orden ' + (o.order_number||'') + (o.source==='bot' ? ' — revísala' : ''));
       pitido();
+    });
+    // Entró un pago. Suena distinto de una orden nueva —dos pitos en vez de
+    // uno— porque en la cocina significan cosas distintas: una orden nueva
+    // hay que revisarla, un pago hay que ponerlo a cocinar YA, y el reloj de
+    // la alarma acaba de arrancar.
+    socket.on('order:paid', function(o){
+      var i = ordenes.findIndex(function(x){ return x.id === o.id; });
+      if (i >= 0) ordenes[i] = o; else ordenes.unshift(o);
+      pintarTablero();
+      avisar('Pago confirmado — orden ' + (o.order_number || o.id) + ' · ' + pesos(o.total));
+      pitido();
+      setTimeout(pitido, 320);
     });
     socket.on('order:updated', function(o){
       var i = ordenes.findIndex(function(x){ return x.id === o.id; });
@@ -1105,12 +1320,25 @@ HORARIO: martes a domingo, 12pm a 10pm"></textarea>
     $('reloj').textContent = String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
   }
 
+  /* Cuántos minutos aguanta este negocio antes de la alarma. Si la
+     configuración no responde se queda el valor por defecto: es mejor una
+     alarma con el umbral genérico que ninguna alarma. */
+  function cargarUmbralAlarma(){
+    api('/bot-config/'+clientId).then(function(j){
+      var m = j.data && j.data.alerta_pedido_minutos;
+      if (m) alertaMinutos = Number(m);
+    }).catch(function(){});
+  }
+
   function arrancar(){
     reloj(); setInterval(reloj, 20000);
+    cargarUmbralAlarma();
     cargarOrdenes();
     conectarSocket();
-    // Los tiempos ("hace 12 min") se refrescan solos aunque no llegue nada nuevo
-    setInterval(pintarTablero, 60000);
+    // Cada 20 s, no cada minuto: un pedido tiene que ponerse rojo al cruzar el
+    // umbral, no hasta un minuto después. Es solo repintar lo que ya está en
+    // memoria, sin ir a la red.
+    setInterval(pintarTablero, 20000);
     // Red de seguridad: si el socket se cayó y volvió, esto reconcilia el tablero
     setInterval(function(){ if (!socket || !socket.connected) cargarOrdenes(); }, 45000);
   }

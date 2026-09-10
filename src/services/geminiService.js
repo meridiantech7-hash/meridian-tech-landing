@@ -526,13 +526,16 @@ const upsertBotConfig = async (clientId, data) => {
       : (existing ? existing.takes_orders : 1),
     // WhatsApp fijo del dueño — único número autorizado para inventario,
     // reservas y estados de cuenta (ver ownerService.js).
-    owner_phone: campo('owner_phone', null)
+    owner_phone: campo('owner_phone', null),
+    // Minutos antes de que un pedido pagado y sin entregar se ponga en alarma
+    // roja en la tablet.
+    alerta_pedido_minutos: campo('alerta_pedido_minutos', 15)
   };
 
   if (existing) {
     await dbRun(
-      `UPDATE bot_configs SET ai_provider=?, ai_model=?, system_prompt=?, business_rules=?, knowledge_base=?, handoff_keywords=?, max_failed_attempts=?, takes_orders=?, owner_phone=?, updated_at=CURRENT_TIMESTAMP WHERE client_id=?`,
-      [fields.ai_provider, fields.ai_model, fields.system_prompt, fields.business_rules, fields.knowledge_base, fields.handoff_keywords, fields.max_failed_attempts, fields.takes_orders, fields.owner_phone, clientId]
+      `UPDATE bot_configs SET ai_provider=?, ai_model=?, system_prompt=?, business_rules=?, knowledge_base=?, handoff_keywords=?, max_failed_attempts=?, takes_orders=?, owner_phone=?, alerta_pedido_minutos=?, updated_at=CURRENT_TIMESTAMP WHERE client_id=?`,
+      [fields.ai_provider, fields.ai_model, fields.system_prompt, fields.business_rules, fields.knowledge_base, fields.handoff_keywords, fields.max_failed_attempts, fields.takes_orders, fields.owner_phone, fields.alerta_pedido_minutos, clientId]
     );
     return existing.id;
   }

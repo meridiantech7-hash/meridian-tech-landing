@@ -49,7 +49,16 @@ const migrations = [
   //
   // Los usuarios que ya existen (Miguel y Juan) quedan en NULL, que es lo
   // correcto: son los dueños de MeridianTech.
-  "ALTER TABLE users ADD COLUMN client_id INTEGER REFERENCES clients(id)"
+  "ALTER TABLE users ADD COLUMN client_id INTEGER REFERENCES clients(id)",
+  // Cuándo quedó pagado el pedido. Es distinto de created_at y de
+  // confirmed_at: la cuenta para la alarma de cocina arranca cuando entra la
+  // plata, no cuando el cliente escribió.
+  "ALTER TABLE orders ADD COLUMN paid_at DATETIME",
+  "ALTER TABLE orders ADD COLUMN payment_method TEXT",
+  // A los cuántos minutos un pedido pagado y sin entregar se pone en alarma.
+  // Va por cliente porque no es lo mismo un asadero que una pizzería: cada
+  // negocio sabe cuánto es "demasiado" en su cocina.
+  "ALTER TABLE bot_configs ADD COLUMN alerta_pedido_minutos INTEGER DEFAULT 15"
 ];
 
 async function runMigrations() {

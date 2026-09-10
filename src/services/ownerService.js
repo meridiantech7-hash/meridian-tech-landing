@@ -85,7 +85,7 @@ const MENSAJE_EDICION_NO_AUTORIZADA =
  */
 const aplicarCambioMenu = async (clientId, config, instruccion) => {
   if (!GEMINI_API_KEY) {
-    return { ok: false, mensaje: 'No puedo hacer ese cambio ahora mismo — hazlo desde la tablet mientras tanto.' };
+    return { ok: false, mensaje: 'No puedo aplicar cambios en este momento. Vuelve a intentarlo en un rato.' };
   }
 
   try {
@@ -120,7 +120,7 @@ const aplicarCambioMenu = async (clientId, config, instruccion) => {
     );
 
     const bruto = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!bruto) return { ok: false, mensaje: 'No pude procesar ese cambio — hazlo desde la tablet mientras tanto.' };
+    if (!bruto) return { ok: false, mensaje: 'No pude procesar ese cambio. Escríbemelo de otra forma, más corto.' };
 
     const parsed = JSON.parse(bruto);
     if (!parsed.aplicado || !parsed.nuevo_conocimiento) {
@@ -132,7 +132,7 @@ const aplicarCambioMenu = async (clientId, config, instruccion) => {
     logger.warn('Fallo aplicando cambio de menú por WhatsApp', {
       clientId, error: error.response?.data?.error?.message || error.message
     });
-    return { ok: false, mensaje: 'Tuve un problema aplicando ese cambio — hazlo desde la tablet mientras tanto.' };
+    return { ok: false, mensaje: 'Tuve un problema aplicando ese cambio. Vuelve a intentarlo en un momento.' };
   }
 };
 

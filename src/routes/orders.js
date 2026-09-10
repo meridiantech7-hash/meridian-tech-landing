@@ -221,8 +221,9 @@ router.post('/:id/confirm', verifyToken, async (req, res, next) => {
   try {
     const order = await dbGet('SELECT * FROM orders WHERE id = ?', [req.params.id]);
     if (!order) return res.status(404).json({ error: 'Orden no encontrada' });
-    if (order.status !== 'por_confirmar') {
     if (!exigirAccesoACliente(req, res, order.client_id)) return;
+
+    if (order.status !== 'por_confirmar') {
       return res.status(409).json({ error: 'Esta orden ya estaba confirmada' });
     }
 
@@ -240,6 +241,57 @@ router.post('/:id/confirm', verifyToken, async (req, res, next) => {
     emitToClient(order.client_id, 'order:updated', updated);
 
     logger.info('Orden de la IA confirmada por una persona', { orderId: order.id, userId: req.user?.id });
+    res.json({ success: true, data: updated });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// POST /api/orders/:id/pagado — marcar que ya entró la plata.
+//
+// Es un momento aparte de "confirmada" y de "recibido", y por eso lleva su
+// propia hora: el reloj de la cocina arranca cuando el pedido está PAGADO, no
+// cuando el cliente escribió. Un pedido sin pagar puede esperar; uno pagado
+// que lleva media hora en cola es un cliente molesto y una devolución.
+const pagoSchema = Joi.object({
+  payment_method: Joi.string().allow('', null)
+});
+
+router.post('/:id/pagado', verifyToken, async (req, res, next) => {
+  try {
+    const { error, value } = pagoSchema.validate(req.body || {});
+    if (error) { error.isJoi = true; throw error; }
+
+    const order = await dbGet('SELECT * FROM orders WHERE id = ?', [req.params.id]);
+    if (!order) return res.status(404).json({ error: 'Orden no encontrada' });
+    if (!exigirAccesoACliente(req, res, order.client_id)) return;
+
+    if (order.paid_at) {
+      return res.status(409).json({ error: 'Esta orden ya estaba marcada como pagada' });
+    }
+
+    await dbRun(
+      `UPDATE orders SET paid_at = CURRENT_TIMESTAMP, payment_method = ?,
+       updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+      [value.payment_method || null, order.id]
+    );
+    await dbRun(
+      'INSERT INTO order_events (order_id, from_status, to_status, user_id, detail) VALUES (?,?,?,?,?)',
+      [order.id, order.status, order.status, req.user?.id,
+       `Pago confirmado${value.payment_method ? ' (' + value.payment_method + ')' : ''}`]
+    );
+
+    const updated = parseOrder(await dbGet('SELECT * FROM orders WHERE id = ?', [order.id]));
+
+    // Evento propio, no un 'order:updated' cualquiera: la tablet tiene que
+    // poder distinguir "algo cambió" de "ENTRÓ UN PAGO" para sonar solo en el
+    // segundo caso. Si sonara con cada cambio, en hora pico nadie le pararía
+    // bolas al pito.
+    emitToClient(order.client_id, 'order:paid', updated);
+
+    logger.info('Pago de pedido confirmado', {
+      orderId: order.id, clientId: order.client_id, total: order.total, userId: req.user?.id
+    });
     res.json({ success: true, data: updated });
   } catch (error) {
     next(error);
