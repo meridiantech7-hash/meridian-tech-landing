@@ -10,6 +10,11 @@ const migrations = [
   "ALTER TABLE plans ADD COLUMN call_minutes_included INTEGER DEFAULT 0",
   "ALTER TABLE plans ADD COLUMN minute_overage_price INTEGER DEFAULT 0",
   "ALTER TABLE clients ADD COLUMN is_internal INTEGER DEFAULT 0",
+  // Por defecto 1 (true): no cambia el comportamiento de ningún cliente que ya
+  // toma pedidos (capa A, restaurantes). Se apaga explícitamente solo donde no
+  // aplica — ver seedInternal.js — para no gastar una llamada de IA completa
+  // extrayendo "pedidos" de una conversación de venta que nunca los tiene.
+  "ALTER TABLE bot_configs ADD COLUMN takes_orders INTEGER DEFAULT 1",
   // El modelo guardado por cliente manda sobre el valor por defecto del código,
   // así que cambiar la constante no basta: hay que mover a los que ya existen.
   // Se migran solo los modelos que se midieron lentos o que dejaron de estar
@@ -181,6 +186,7 @@ CREATE TABLE IF NOT EXISTS bot_configs (
   knowledge_base TEXT,            -- conocimiento previo: catálogo, precios, FAQs (texto libre)
   handoff_keywords TEXT,          -- JSON array de palabras/frases que derivan a humano
   max_failed_attempts INTEGER DEFAULT 3,
+  takes_orders INTEGER DEFAULT 1, -- si es 0, se salta extractOrder (ahorra una llamada de IA por mensaje en negocios que no toman pedidos, ej. venta consultiva)
   status TEXT DEFAULT 'active',
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,

@@ -56,6 +56,11 @@ async function seedInternal() {
   // real extraído de la propuesta de valor y los planes de la landing.
   await geminiService.upsertBotConfig(internalClientId, {
     ai_model: 'gemini-3.5-flash-lite',
+    // MeridianTech vendiéndose a sí misma es una conversación de venta
+    // consultiva, nunca un pedido de producto — apagar esto evita pagar una
+    // llamada de IA de extracción de pedido en cada mensaje que nunca iba a
+    // encontrar nada. Los clientes de capa A (restaurantes) sí lo dejan en 1.
+    takes_orders: false,
     // Guion de venta consultiva. Reescrito a partir de un problema real medido:
     // cuando el bot ofrecía el link de pago por iniciativa propia, la gente
     // desconfiaba y abandonaba — el ofrecimiento no solicitado es justo lo que

@@ -70,11 +70,14 @@ const esperar = (ms) => new Promise((r) => setTimeout(r, ms));
  * responder rápido.
  *
  * `maxOutputTokens` acota la respuesta. Sin tope, el modelo puede irse por las
- * ramas y el cliente termina leyendo tres párrafos en WhatsApp.
+ * ramas y el cliente termina leyendo tres párrafos en WhatsApp — y cada token
+ * de más que genera se paga. El guion de venta (seedInternal.js) pide "2 a 4
+ * líneas", que en español ronda 60-90 tokens; 300 deja margen de sobra sin
+ * dejar la puerta abierta a una respuesta de tres párrafos.
  */
 const GENERACION = {
   temperature: 0.7,
-  maxOutputTokens: 500,
+  maxOutputTokens: 300,
   thinkingConfig: { thinkingBudget: 0 }
 };
 
@@ -152,7 +155,8 @@ const getBotConfig = async (clientId) => {
       business_rules: '{}',
       knowledge_base: '',
       handoff_keywords: '[]',
-      max_failed_attempts: 3
+      max_failed_attempts: 3,
+      takes_orders: 1
     };
   }
   return config;
@@ -328,6 +332,13 @@ const extractOrder = async (clientId, conversationHistory, incoming) => {
 
   const config = await getBotConfig(clientId);
 
+  // Bifurcación antes de gastar tokens: si el negocio no toma pedidos (venta
+  // consultiva, capa B, soporte, etc.), esta llamada completa a Gemini nunca
+  // iba a encontrar nada — se estaba pagando por una extracción imposible en
+  // cada mensaje de cada conversación. Por defecto sigue en 1 (true) para no
+  // tocar a nadie que ya dependa de esto (restaurantes, capa A).
+  if (!Number(config.takes_orders)) return null;
+
   const transcript = [...conversationHistory, { sender_type: 'end_customer', content: incoming.text || '' }]
     .filter(m => m.content)
     .map(m => `${m.sender_type === 'end_customer' ? 'CLIENTE' : 'NEGOCIO'}: ${m.content}`)
@@ -427,21 +438,24 @@ const upsertBotConfig = async (clientId, data) => {
     business_rules: JSON.stringify(data.business_rules || {}),
     knowledge_base: data.knowledge_base || '',
     handoff_keywords: JSON.stringify(data.handoff_keywords || []),
-    max_failed_attempts: data.max_failed_attempts || 3
+    max_failed_attempts: data.max_failed_attempts || 3,
+    // Por defecto 1 (true): quien no lo especifique se comporta como siempre
+    // (restaurantes, capa A). Se apaga explícitamente en seedInternal.js.
+    takes_orders: data.takes_orders === undefined ? 1 : (data.takes_orders ? 1 : 0)
   };
 
   if (existing) {
     await dbRun(
-      `UPDATE bot_configs SET ai_provider=?, ai_model=?, system_prompt=?, business_rules=?, knowledge_base=?, handoff_keywords=?, max_failed_attempts=?, updated_at=CURRENT_TIMESTAMP WHERE client_id=?`,
-      [fields.ai_provider, fields.ai_model, fields.system_prompt, fields.business_rules, fields.knowledge_base, fields.handoff_keywords, fields.max_failed_attempts, clientId]
+      `UPDATE bot_configs SET ai_provider=?, ai_model=?, system_prompt=?, business_rules=?, knowledge_base=?, handoff_keywords=?, max_failed_attempts=?, takes_orders=?, updated_at=CURRENT_TIMESTAMP WHERE client_id=?`,
+      [fields.ai_provider, fields.ai_model, fields.system_prompt, fields.business_rules, fields.knowledge_base, fields.handoff_keywords, fields.max_failed_attempts, fields.takes_orders, clientId]
     );
     return existing.id;
   }
 
   const result = await dbRun(
-    `INSERT INTO bot_configs (client_id, ai_provider, ai_model, system_prompt, business_rules, knowledge_base, handoff_keywords, max_failed_attempts)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    [clientId, fields.ai_provider, fields.ai_model, fields.system_prompt, fields.business_rules, fields.knowledge_base, fields.handoff_keywords, fields.max_failed_attempts]
+    `INSERT INTO bot_configs (client_id, ai_provider, ai_model, system_prompt, business_rules, knowledge_base, handoff_keywords, max_failed_attempts, takes_orders)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [clientId, fields.ai_provider, fields.ai_model, fields.system_prompt, fields.business_rules, fields.knowledge_base, fields.handoff_keywords, fields.max_failed_attempts, fields.takes_orders]
   );
   return result.id;
 };
