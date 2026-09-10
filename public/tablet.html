@@ -120,28 +120,48 @@
     flex:0 0 320px;border-right:1px solid var(--line);overflow-y:auto;
     background:var(--surface);
   }
+  /* Filas de la lista, como en Mensajes de iOS: foto redonda, nombre en
+     negrita, una sola línea de anticipo y la hora arriba a la derecha. La
+     línea divisoria arranca después de la foto, no de borde a borde. */
   .chat-item{
-    display:block;width:100%;text-align:left;padding:14px 16px;
-    border-bottom:1px solid var(--line);min-height:64px;
+    display:grid;grid-template-columns:auto 1fr;gap:12px;
+    width:100%;text-align:left;padding:11px 16px;min-height:70px;
+    position:relative;align-items:center;
+  }
+  .chat-item::after{
+    content:"";position:absolute;left:72px;right:0;bottom:0;
+    height:1px;background:var(--line);
   }
   .chat-item[aria-current="true"]{background:var(--surface-2)}
-  .chat-item .n1{display:flex;align-items:center;gap:8px}
-  .chat-item .nom{font-weight:600}
-  .chat-item .modo{
-    margin-left:auto;font-size:11px;font-weight:800;text-transform:uppercase;
-    letter-spacing:.5px;padding:2px 7px;border-radius:5px;
-    background:rgba(76,154,255,.16);color:var(--recibido)
+  .chat-item .foto{
+    width:44px;height:44px;border-radius:50%;display:grid;place-items:center;
+    font-size:16px;font-weight:600;color:#fff;letter-spacing:.5px;
+    background:linear-gradient(180deg,#5b6b80,#3d4a5c);
   }
-  .chat-item .modo.humano{background:rgba(245,166,35,.16);color:var(--confirmar)}
-  .chat-item .prev{color:var(--muted);font-size:14px;margin-top:2px}
+  .chat-item .foto.humano{background:linear-gradient(180deg,#3ddc78,#23a558)}
+  .chat-item .cuerpo{min-width:0}
+  .chat-item .n1{display:flex;align-items:baseline;gap:8px}
+  .chat-item .nom{font-weight:600;font-size:16px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .chat-item .cuando{margin-left:auto;font-size:12.5px;color:var(--muted);flex:none}
+  .chat-item .prev{
+    color:var(--muted);font-size:14.5px;margin-top:1px;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  }
+  .chat-item .prev b{color:#4c9aff;font-weight:600}
+  .chat-item .prev b.humano{color:var(--listo)}
 
   .conver{flex:1;display:flex;flex-direction:column;min-width:0}
+  /* Cabecera centrada y traslúcida, como la de una conversación en iOS. */
   .conver-cab{
-    display:flex;align-items:center;gap:12px;padding:12px 16px;
-    border-bottom:1px solid var(--line);background:var(--surface);flex:none;
+    display:flex;align-items:center;gap:12px;padding:10px 16px;
+    border-bottom:1px solid var(--line);flex:none;
+    background:rgba(26,32,41,.82);
+    -webkit-backdrop-filter:saturate(180%) blur(20px);
+    backdrop-filter:saturate(180%) blur(20px);
   }
-  .conver-cab .quien{font-weight:700}
-  .conver-cab .acciones{margin-left:auto;display:flex;gap:9px}
+  .conver-cab .centro{flex:1;text-align:center;min-width:0}
+  .conver-cab .quien{font-weight:600;font-size:16px}
+  .conver-cab .acciones{display:flex;gap:9px;flex:none}
   .btn{
     padding:11px 16px;border-radius:10px;font-weight:700;min-height:48px;
     background:var(--surface-2);color:var(--text);border:1px solid var(--line)
@@ -153,19 +173,101 @@
   .btn.peligro{background:transparent;color:var(--peligro);border-color:var(--peligro)}
   .btn:disabled{opacity:.45}
 
-  .mensajes{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:10px}
-  .msj{max-width:76%;padding:10px 14px;border-radius:14px;font-size:15px;word-wrap:break-word}
-  .msj.cliente{background:var(--surface-2);align-self:flex-start;border-bottom-left-radius:4px}
-  .msj.bot{background:#1e3a5f;align-self:flex-end;border-bottom-right-radius:4px}
-  .msj.dueno{background:#4a3a12;align-self:flex-end;border-bottom-right-radius:4px}
-  .msj .meta{font-size:11px;color:var(--muted);margin-top:4px;display:flex;gap:7px}
-  .escribir{display:flex;gap:10px;padding:12px;border-top:1px solid var(--line);background:var(--surface);flex:none}
-  .escribir input{
-    flex:1;padding:14px;border-radius:10px;border:1px solid var(--line);
-    background:var(--bg);color:var(--text);min-height:50px
+  /* ---------- Mensajería: lenguaje de iMessage ----------
+     Se adopta a propósito la gramática de Mensajes de iOS, que el dueño de un
+     negocio ya sabe leer sin que nadie le explique: lo que le llega a la
+     izquierda en gris, lo que sale del negocio a la derecha, burbujas con cola
+     solo al final de cada tanda, y la hora como separador centrado en vez de
+     una etiqueta pegada a cada mensaje.
+
+     Y se aprovecha una convención que iOS ya trae: azul es su mensajería
+     propia, verde es un SMS. Acá el AZUL es Meri contestando y el VERDE es
+     una persona del equipo que tomó el chat. Así, de un vistazo desde el otro
+     lado de la cocina, se ve quién está atendiendo — que es justo la pregunta
+     que uno le hace a esta pantalla. */
+  .mensajes{
+    flex:1;overflow-y:auto;padding:14px 18px 22px;
+    display:flex;flex-direction:column;
+    background:var(--bg);
+    /* Las colas de las burbujas se dibujan fuera del ancho de la burbuja
+       (right:-19px); sin esto aparecía una barra horizontal en la conversación. */
+    overflow-x:hidden;
   }
+  .sello{
+    align-self:center;margin:16px 0 10px;font-size:12px;color:var(--muted);
+    letter-spacing:.2px;
+  }
+  .sello b{color:var(--text);font-weight:600}
+  .quien-habla{
+    font-size:11px;color:var(--muted);margin:8px 0 3px;padding:0 4px;
+    letter-spacing:.3px;
+  }
+  .quien-habla.der{align-self:flex-end}
+  .quien-habla.izq{align-self:flex-start}
+
+  .burbuja{
+    position:relative;max-width:72%;padding:9px 15px;font-size:15.5px;
+    line-height:1.35;word-wrap:break-word;white-space:pre-wrap;
+    border-radius:19px;margin-top:2px;
+    -webkit-user-select:text;user-select:text;
+  }
+  .burbuja.izq{align-self:flex-start;background:#26262a;color:var(--text)}
+  .burbuja.der{align-self:flex-end;color:#fff}
+  .burbuja.der.bot{background:#0a84ff}
+  .burbuja.der.dueno{background:#30d158;color:#04150b}
+
+  /* Radios apretados dentro de una misma tanda: es lo que hace que tres
+     mensajes seguidos se lean como un bloque y no como tres cosas sueltas. */
+  .burbuja.izq.sigue{border-top-left-radius:7px}
+  .burbuja.izq.antes{border-bottom-left-radius:7px}
+  .burbuja.der.sigue{border-top-right-radius:7px}
+  .burbuja.der.antes{border-bottom-right-radius:7px}
+
+  /* La cola, solo en el último de cada tanda. El segundo pseudoelemento tapa
+     con el color del fondo para dejar la curva cóncava de iOS. */
+  .burbuja.fin::before,
+  .burbuja.fin::after{content:"";position:absolute;bottom:0;height:19px}
+  .burbuja.der.fin::before{
+    right:-7px;width:20px;border-bottom-left-radius:17px 14px;
+  }
+  .burbuja.der.bot.fin::before{background:#0a84ff}
+  .burbuja.der.dueno.fin::before{background:#30d158}
+  .burbuja.der.fin::after{
+    right:-19px;width:13px;background:var(--bg);border-bottom-left-radius:11px;
+  }
+  .burbuja.izq.fin::before{
+    left:-7px;width:20px;background:#26262a;border-bottom-right-radius:17px 14px;
+  }
+  .burbuja.izq.fin::after{
+    left:-19px;width:13px;background:var(--bg);border-bottom-right-radius:11px;
+  }
+
+  .acuse{
+    align-self:flex-end;font-size:11px;color:var(--muted);
+    margin:4px 6px 0;letter-spacing:.2px;
+  }
+  .acuse.falla{color:var(--peligro);font-weight:600}
+
+  /* ---------- Barra de escritura ---------- */
+  .escribir{
+    display:flex;align-items:flex-end;gap:10px;padding:10px 14px 14px;
+    border-top:1px solid var(--line);background:var(--surface);flex:none;
+  }
+  .escribir input{
+    flex:1;padding:12px 18px;border-radius:22px;border:1px solid var(--line);
+    background:var(--bg);color:var(--text);min-height:46px;
+  }
+  .escribir input:focus{outline:none;border-color:#0a84ff}
+  .enviar{
+    width:46px;height:46px;flex:none;border-radius:50%;background:#0a84ff;
+    display:grid;place-items:center;transition:transform .12s,opacity .12s;
+  }
+  .enviar svg{width:22px;height:22px;fill:#fff}
+  .enviar:active{transform:scale(.92)}
+  .enviar:disabled{opacity:.35}
+
   .aviso-bot{
-    padding:10px 16px;background:rgba(76,154,255,.1);color:var(--recibido);
+    padding:12px 16px;background:rgba(10,132,255,.1);color:#4c9aff;
     font-size:14px;text-align:center;border-top:1px solid var(--line)
   }
 
@@ -274,7 +376,7 @@
       <div class="lista" id="listaChats"></div>
       <div class="conver">
         <div class="conver-cab">
-          <div>
+          <div class="centro">
             <div class="quien" id="chatQuien">Selecciona una conversación</div>
             <div style="color:var(--muted);font-size:13px" id="chatCanal"></div>
           </div>
@@ -634,6 +736,17 @@ HORARIO: martes a domingo, 12pm a 10pm"></textarea>
     }).catch(function(e){ avisar(e.message); });
   }
 
+  /* Iniciales para la foto redonda. Si el contacto llegó sin nombre solo
+     tenemos el teléfono: ahí van los dos últimos dígitos, que es lo que
+     distingue a un número de otro en una lista. */
+  function iniciales(nombre){
+    var t = String(nombre || '').trim();
+    if (!t) return '?';
+    if (/^\+?\d[\d\s-]*$/.test(t)) return t.replace(/\D/g, '').slice(-2);
+    var partes = t.split(/\s+/).filter(Boolean);
+    return (partes[0][0] + (partes.length > 1 ? partes[partes.length - 1][0] : '')).toUpperCase();
+  }
+
   function pintarChats(){
     var cont = $('listaChats');
     if (!chats.length) { cont.innerHTML = '<div class="vacio">Todavía no hay conversaciones.</div>'; return; }
@@ -642,13 +755,21 @@ HORARIO: martes a domingo, 12pm a 10pm"></textarea>
 
     chats.forEach(function(c){
       if (c.mode !== 'bot') enHumano++;
+      var nombre = c.end_customer_name || c.end_customer_id;
+      var enPersona = c.mode !== 'bot';
+
       var b = document.createElement('button');
       b.className = 'chat-item';
       b.setAttribute('aria-current', chatActivo && chatActivo.id === c.id ? 'true':'false');
       b.innerHTML =
-        '<div class="n1"><span class="nom">'+esc(c.end_customer_name || c.end_customer_id)+'</span>'+
-        '<span class="modo'+(c.mode!=='bot'?' humano':'')+'">'+(c.mode==='bot'?'bot':'tú')+'</span></div>'+
-        '<div class="prev">'+esc(c.channel_type)+' · '+hace(c.last_message_at)+'</div>';
+        '<div class="foto'+(enPersona?' humano':'')+'">'+esc(iniciales(nombre))+'</div>'+
+        '<div class="cuerpo">'+
+          '<div class="n1"><span class="nom">'+esc(nombre)+'</span>'+
+          '<span class="cuando">'+hace(c.last_message_at)+'</span></div>'+
+          '<div class="prev">'+esc(c.channel_type)+' · '+
+          (enPersona ? '<b class="humano">lo atiendes tú</b>' : '<b>Meri está contestando</b>')+
+          '</div>'+
+        '</div>';
       b.addEventListener('click', function(){ abrirChat(c); });
       cont.appendChild(b);
     });
@@ -701,15 +822,21 @@ HORARIO: martes a domingo, 12pm a 10pm"></textarea>
           c.mode = 'bot'; abrirChat(c); avisar('El bot volvió a tomar el chat.');
         }).catch(function(e){ avisar(e.message); });
       };
+      // Botón redondo con flecha, como el de Mensajes: se apaga mientras el
+      // campo está vacío, así se ve de una si falta escribir algo.
       $('zonaEscribir').innerHTML =
         '<form class="escribir" id="formMsj">'+
-        '<input id="txtMsj" placeholder="Escribe tu respuesta..." autocomplete="off">'+
-        '<button class="btn primario" type="submit">Enviar</button></form>';
+        '<input id="txtMsj" placeholder="Mensaje" autocomplete="off">'+
+        '<button class="enviar" type="submit" id="btnEnviar" aria-label="Enviar mensaje" disabled>'+
+        '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.6l6.6 6.6-1.5 1.5-4-4V20h-2.2V7.7l-4 4L5.4 10.2z"/></svg>'+
+        '</button></form>';
+      $('txtMsj').oninput = function(){ $('btnEnviar').disabled = !this.value.trim(); };
       $('formMsj').onsubmit = function(ev){
         ev.preventDefault();
         var txt = $('txtMsj').value.trim();
         if (!txt) return;
         $('txtMsj').value = '';
+        $('btnEnviar').disabled = true;
         api('/conversations/'+c.id+'/messages', {method:'POST', body:JSON.stringify({content:txt})})
           .then(function(j){
             if (j.warning) avisar(j.warning);
@@ -719,20 +846,87 @@ HORARIO: martes a domingo, 12pm a 10pm"></textarea>
     }
   }
 
+  /* Fecha y hora del separador, con el formato de iOS: hoy y ayer se nombran,
+     lo más viejo lleva la fecha. */
+  function sello(iso){
+    var d = new Date(String(iso).replace(' ', 'T') + (String(iso).indexOf('Z') < 0 ? 'Z' : ''));
+    if (isNaN(d)) return '';
+    var hora = d.toLocaleTimeString('es-CO', {hour:'numeric', minute:'2-digit', timeZone:'America/Bogota'});
+    var hoy = new Date();
+    var mismoDia = function(a, b){ return a.toDateString() === b.toDateString(); };
+    var ayer = new Date(hoy.getTime() - 86400000);
+    if (mismoDia(d, hoy)) return '<b>hoy</b> ' + hora;
+    if (mismoDia(d, ayer)) return '<b>ayer</b> ' + hora;
+    return '<b>' + d.toLocaleDateString('es-CO', {day:'numeric', month:'short', timeZone:'America/Bogota'}) + '</b> ' + hora;
+  }
+
+  function alMomento(iso){
+    var d = new Date(String(iso).replace(' ', 'T') + (String(iso).indexOf('Z') < 0 ? 'Z' : ''));
+    return isNaN(d) ? 0 : d.getTime();
+  }
+
+  var HUECO_SELLO = 10 * 60 * 1000;  // 10 min sin hablar: se marca la hora
+  var HUECO_TANDA = 2 * 60 * 1000;   // 2 min: se rompe la tanda de burbujas
+
   function pintarMensajes(){
     var cont = $('mensajes');
     if (!mensajes.length) { cont.innerHTML = '<div class="vacio">Sin mensajes todavía.</div>'; return; }
     cont.innerHTML = '';
-    mensajes.forEach(function(m){
-      var d = document.createElement('div');
-      var clase = m.sender_type === 'end_customer' ? 'cliente' : (m.sender_type === 'owner' ? 'dueno' : 'bot');
-      d.className = 'msj ' + clase;
-      d.innerHTML = esc(m.content) +
-        '<div class="meta"><span>'+(clase==='cliente'?'cliente':clase==='dueno'?'tú':'bot')+'</span>'+
-        '<span>'+hace(m.created_at)+'</span>'+
-        (m.delivered === false ? '<span style="color:var(--peligro)">no entregado</span>' : '')+'</div>';
-      cont.appendChild(d);
+
+    var lado = function(m){ return m.sender_type === 'end_customer' ? 'izq' : 'der'; };
+    var tipo = function(m){
+      return m.sender_type === 'end_customer' ? 'cliente'
+           : m.sender_type === 'owner' ? 'dueno' : 'bot';
+    };
+    var comoLlaman = { cliente:'Cliente', dueno:'Tú', bot:'Meri' };
+
+    mensajes.forEach(function(m, i){
+      var previo = mensajes[i - 1];
+      var siguiente = mensajes[i + 1];
+      var t = alMomento(m.created_at);
+
+      // ¿Arranca una tanda nueva? Cambió quién habla, o pasó demasiado tiempo.
+      var abreTanda = !previo || tipo(previo) !== tipo(m) ||
+        (t - alMomento(previo.created_at)) > HUECO_TANDA;
+      var cierraTanda = !siguiente || tipo(siguiente) !== tipo(m) ||
+        (alMomento(siguiente.created_at) - t) > HUECO_TANDA;
+
+      if (!previo || (t - alMomento(previo.created_at)) > HUECO_SELLO) {
+        var s = document.createElement('div');
+        s.className = 'sello';
+        s.innerHTML = sello(m.created_at);
+        cont.appendChild(s);
+      }
+
+      if (abreTanda) {
+        var q = document.createElement('div');
+        q.className = 'quien-habla ' + lado(m);
+        q.textContent = comoLlaman[tipo(m)];
+        cont.appendChild(q);
+      }
+
+      var b = document.createElement('div');
+      b.className = 'burbuja ' + lado(m) + ' ' + tipo(m) +
+        (abreTanda ? '' : ' sigue') +
+        (cierraTanda ? ' fin' : ' antes');
+      b.textContent = m.content;
+      cont.appendChild(b);
+
+      // El acuse va solo bajo el último mensaje nuestro de la tanda: repetirlo
+      // en cada burbuja es ruido, y lo que importa es si lo último llegó.
+      if (lado(m) === 'der' && cierraTanda && m.delivered === false) {
+        var a = document.createElement('div');
+        a.className = 'acuse falla';
+        a.textContent = 'No entregado';
+        cont.appendChild(a);
+      } else if (lado(m) === 'der' && cierraTanda && !siguiente) {
+        var e = document.createElement('div');
+        e.className = 'acuse';
+        e.textContent = 'Entregado';
+        cont.appendChild(e);
+      }
     });
+
     cont.scrollTop = cont.scrollHeight;
   }
 
