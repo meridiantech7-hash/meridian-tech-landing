@@ -248,10 +248,26 @@ router.post('/webhook/bold', async (req, res, next) => {
 
     logger.info('Webhook de Bold recibido', { tipo: payload?.type });
 
+    // Sin secreto configurado NO se puede verificar nada, y este webhook
+    // activa suscripciones: aceptarlo sin firma dejaba que cualquiera hiciera
+    // un POST con un `reference` válido y se activara el plan sin pagar. El
+    // orderId no es secreto — el propio comprador lo ve en la URL de
+    // /pagar/:orderId —, así que el ataque era trivial para un cliente.
+    //
+    // Se rechaza cerrado a propósito: es mejor confirmar un pago a mano que
+    // regalar suscripciones. Si esto aparece en los logs, falta cargar
+    // BOLD_WEBHOOK_SECRET (está en el panel de Bold).
+    if (!process.env.BOLD_WEBHOOK_SECRET) {
+      logger.error('Webhook de Bold rechazado: falta BOLD_WEBHOOK_SECRET, no se puede verificar la firma', {
+        ip: req.ip, tipo: payload?.type
+      });
+      return res.status(503).json({ error: 'Verificación de pagos no configurada' });
+    }
+
     // La firma se calcula sobre el cuerpo CRUDO (Base64), nunca sobre
     // JSON.stringify(payload) — el orden de llaves puede no coincidir con lo
     // que Bold firmó. `req.rawBody` lo captura el verify de express.json.
-    if (process.env.BOLD_WEBHOOK_SECRET && !boldService.verifyWebhookSignature(req.rawBody, signature)) {
+    if (!boldService.verifyWebhookSignature(req.rawBody, signature)) {
       logger.warn('Webhook de Bold con firma inválida', { ip: req.ip });
       return res.status(401).json({ error: 'Firma inválida' });
     }
