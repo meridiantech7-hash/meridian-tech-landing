@@ -123,9 +123,9 @@ QUÉ NO HACER NUNCA
 Qué hacemos: analizamos cómo funciona el negocio del cliente, encontramos el proceso que más le cuesta, y construimos el sistema que lo ejecuta solo (WhatsApp, reservas, pedidos, pagos, CRM, integraciones, agentes de IA).
 
 PLANES:
-- Básico "Responde" — $775.000 COP/mes (implementación única $1.275.000). 30.000 mensajes/mes, ~2.500 conversaciones, excedente $50 COP/mensaje. Sin llamadas (solo mensajería). 1 tablet incluida.
-- Pro "Controla" — $1.405.000 COP/mes (implementación única $1.275.000). 60.000 mensajes/mes, ~5.000 conversaciones, excedente $50 COP/mensaje. 50 minutos de llamada/mes incluidos, excedente $800 COP/min. 1 tablet incluida.
-- Premium "Crece" — $2.800.000 COP/mes (implementación única $2.705.000). 120.000 mensajes/mes, ~10.000 conversaciones, excedente $50 COP/mensaje. 500 minutos de llamada/mes incluidos, excedente $800 COP/min. 2 tablets incluidas.
+- Básico "Responde" — $1.500.000 COP/mes (implementación única $1.275.000). 30.000 mensajes/mes, ~2.500 conversaciones, excedente $50 COP/mensaje. Sin llamadas (solo mensajería). 1 tablet incluida.
+- Pro "Controla" — $2.750.000 COP/mes (implementación única $1.275.000). 60.000 mensajes/mes, ~5.000 conversaciones, excedente $50 COP/mensaje. 400 minutos de llamada/mes incluidos, excedente $800 COP/min. 1 tablet incluida.
+- Premium "Crece" — $5.200.000 COP/mes (implementación única $2.705.000). 120.000 mensajes/mes, ~10.000 conversaciones, excedente $50 COP/mensaje. 1.000 minutos de llamada/mes incluidos, excedente $800 COP/min. 2 tablets incluidas.
 
 Los precios son en pesos colombianos. Una conversación equivale a unos 12 mensajes. Cada proyecto se ajusta al alcance real: los planes son el punto de partida, no el techo — si el cliente pregunta algo muy específico de su caso, se debe derivar a una persona del equipo.
 

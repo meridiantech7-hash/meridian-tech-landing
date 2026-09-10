@@ -3,29 +3,44 @@ const { dbGet, dbRun, close } = require('./database');
 const logger = require('../utils/logger');
 
 /**
- * Precios recalculados (septiembre 2026) porque los anteriores dejaban la
- * implementación del plan Básico en margen cero o negativo: un equipo de
- * hasta $850.000 se comía toda la implementación de $850.000, sin dejar nada
- * para cubrir las APIs y los permisos que la empresa paga por su cuenta.
+ * Precios recalculados dos veces (septiembre 2026):
  *
- * Insumos confirmados:
+ * 1ra vuelta: los anteriores dejaban la implementación del plan Básico en
+ * margen cero o negativo — un equipo de hasta $850.000 se comía toda la
+ * implementación de $850.000, sin dejar nada para las APIs y los permisos
+ * que la empresa paga por su cuenta.
+ *
+ * 2da vuelta: la 1ra vuelta calculaba la mensualidad con un recargo del 35%
+ * sobre el costo, que da un MARGEN NETO real de solo 26-30% — no el 60%+ que
+ * se pidió después. Para 60%+ de margen neto el precio tiene que ser
+ * costo / (1 - margen), no costo × (1 + recargo): son operaciones distintas
+ * y la primera exige un precio bastante más alto para el mismo costo.
+ *
+ * De paso se corrigió el costo de minutos: se había estimado en $300 COP/min
+ * sin confirmar; el real (WhatsApp Calling, sin número aparte) es $44 COP/min
+ * — con el correcto, los minutos casi no mueven el precio (la diferencia
+ * entre 50 y 1.000 minutos es de apenas ~$42.000 en costo).
+ *
+ * Insumos:
  *   - Tablet Galaxy A11+ (Básico/Pro, y una de las dos de Premium): $650.000–$850.000 → 750.000
  *   - Segunda tablet de Premium (gama superior): $1.000.000–$1.200.000 → 1.100.000
  *   - Gastos fijos mensuales a cubrir: $1.000.000
+ *   - Costo real estimado: ~$15 COP/mensaje (sin confirmar), $44 COP/minuto (confirmado)
  *
  * Supuesto SIN confirmar todavía — avisar antes de dar esto por definitivo:
- *   - Clientes activos para repartir ese gasto fijo: 8 (ajustable, es la
+ *   - Clientes activos para repartir el gasto fijo: 8 (ajustable, es la
  *     variable que más mueve la mensualidad). Ver la calculadora del PR.
  *
  * Fórmula (misma que la calculadora interactiva):
  *   implementación = costo del equipo × 1.3 (margen 30%) + 300.000 (puesta en marcha)
- *   mensualidad = (costo variable del plan + gasto_fijo/clientes) × 1.35 (margen 35%)
+ *   costo total = mensajes×15 + minutos×44 + (gasto_fijo / clientes)
+ *   mensualidad = costo total / (1 − 0.60), redondeada con margen de sobra por encima del 60%
  */
 const plans = [
   {
     name: 'Básico',
     description: 'Automatización esencial para empezar a escalar tu operación',
-    price: 775000,
+    price: 1500000,
     implementation_price: 1275000,
     currency: 'COP',
     billing_cycle: 'monthly',
@@ -45,7 +60,7 @@ const plans = [
   {
     name: 'Pro',
     description: 'Automatización avanzada con IA para equipos en crecimiento',
-    price: 1405000,
+    price: 2750000,
     implementation_price: 1275000,
     currency: 'COP',
     billing_cycle: 'monthly',
@@ -60,13 +75,13 @@ const plans = [
     max_storage: 25,
     messages_included: 60000,
     message_overage_price: 50,
-    call_minutes_included: 50,
+    call_minutes_included: 400,
     minute_overage_price: 800
   },
   {
     name: 'Premium',
     description: 'Solución integral de automatización e IA a medida',
-    price: 2800000,
+    price: 5200000,
     implementation_price: 2705000,
     currency: 'COP',
     billing_cycle: 'monthly',
@@ -82,7 +97,7 @@ const plans = [
     max_storage: 100,
     messages_included: 120000,
     message_overage_price: 50,
-    call_minutes_included: 500,
+    call_minutes_included: 1000,
     minute_overage_price: 800
   }
 ];
