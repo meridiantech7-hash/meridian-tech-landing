@@ -190,42 +190,61 @@ async function processMessage(clientId, msg) {
   const config = await geminiService.getBotConfig(clientId);
   const esDueno = ownerService.esDueno(config, msg.end_customer_id);
 
+  // Los rechazos fijos son de capa A (los negocios de nuestros clientes):
+  // existen para que el bot de un restaurante no suelte su inventario ni sus
+  // ventas a cualquiera que escriba. En la capa B — el bot de ventas de
+  // MERIDIANTECH — no hay datos de nadie que proteger, y esas mismas palabras
+  // son preguntas de compra: "¿me da reportes de ventas?", "¿maneja
+  // inventario?", "¿puedo cambiar los precios desde WhatsApp?". Rechazarlas
+  // mata justo la conversación que el prompt consultivo está tratando de
+  // llevar hasta el cierre. Así que en el cliente interno estas preguntas
+  // siguen su curso normal hacia la IA; los atajos del dueño se conservan.
+  const cliente = await dbGet('SELECT is_internal FROM clients WHERE id = ?', [clientId]);
+  const esClienteInterno = !!cliente?.is_internal;
+
   // Cambiar menú o precios por WhatsApp: SOLO el dueño autorizado puede
   // pedirlo, y ahí sí se ejecuta de una — cualquier otro número lo tiene
   // bloqueado de forma fija, sin excepción.
   if (ownerService.esSolicitudDeEdicion(msg.text)) {
-    if (!esDueno) {
+    if (esDueno) {
+      const cambio = await ownerService.aplicarCambioMenu(clientId, config, msg.text);
+      if (cambio.ok) {
+        await geminiService.upsertBotConfig(clientId, { knowledge_base: cambio.nuevoConocimiento });
+        logger.info('El dueño actualizó el menú/precios por WhatsApp', { conversationId: conversation.id, resumen: cambio.resumen });
+        await responderDirecto(clientId, conversation, msg, `Listo ✅ ${cambio.resumen}`);
+      } else {
+        await responderDirecto(clientId, conversation, msg, cambio.mensaje);
+      }
+      return;
+    }
+
+    if (!esClienteInterno) {
       logger.info('Solicitud de edición de menú/precios rechazada: no es el dueño', { conversationId: conversation.id });
       await responderDirecto(clientId, conversation, msg, ownerService.MENSAJE_EDICION_NO_AUTORIZADA);
       return;
     }
-
-    const cambio = await ownerService.aplicarCambioMenu(clientId, config, msg.text);
-    if (cambio.ok) {
-      await geminiService.upsertBotConfig(clientId, { knowledge_base: cambio.nuevoConocimiento });
-      logger.info('El dueño actualizó el menú/precios por WhatsApp', { conversationId: conversation.id, resumen: cambio.resumen });
-      await responderDirecto(clientId, conversation, msg, `Listo ✅ ${cambio.resumen}`);
-    } else {
-      await responderDirecto(clientId, conversation, msg, cambio.mensaje);
-    }
-    return;
+    // Capa B: es un prospecto preguntando por la función, no alguien
+    // intentando editar un menú. Sigue de largo hacia la IA.
   }
 
-  if (!esDueno) {
+  if (esDueno) {
+    if (ownerService.esConsultaPedidos(msg.text)) {
+      const resumen = await ownerService.resumenPedidosHoy(clientId);
+      await responderDirecto(clientId, conversation, msg, resumen);
+      return;
+    }
+    if (ownerService.esConsultaReservas(msg.text)) {
+      const resumen = await ownerService.resumenReservasHoy(clientId);
+      await responderDirecto(clientId, conversation, msg, resumen);
+      return;
+    }
+  } else if (!esClienteInterno) {
     const temaRestringido = ownerService.esTemaRestringido(msg.text);
     if (temaRestringido) {
       logger.info('Tema restringido rechazado sin IA', { conversationId: conversation.id, tema: temaRestringido });
       await responderDirecto(clientId, conversation, msg, ownerService.MENSAJE_NO_AUTORIZADO);
       return;
     }
-  } else if (ownerService.esConsultaPedidos(msg.text)) {
-    const resumen = await ownerService.resumenPedidosHoy(clientId);
-    await responderDirecto(clientId, conversation, msg, resumen);
-    return;
-  } else if (ownerService.esConsultaReservas(msg.text)) {
-    const resumen = await ownerService.resumenReservasHoy(clientId);
-    await responderDirecto(clientId, conversation, msg, resumen);
-    return;
   }
 
   const history = await dbAll(
