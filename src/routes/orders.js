@@ -1,6 +1,6 @@
 const express = require('express');
 const Joi = require('joi');
-const { verifyToken } = require('../middleware/auth');
+const { verifyToken, exigirAccesoACliente, clienteForzado } = require('../middleware/auth');
 const { dbGet, dbAll, dbRun } = require('../config/database');
 const { emitToClient } = require('./conversations');
 const logger = require('../utils/logger');
@@ -68,7 +68,10 @@ const parseOrder = (o) => {
 // GET /api/orders?client_id=1&status=preparando&include_closed=false
 router.get('/', verifyToken, async (req, res, next) => {
   try {
-    const clientId = req.query.client_id;
+    // Forzado al cliente del usuario: el filtro no puede depender de lo que
+    // manda el navegador.
+    const forzado = clienteForzado(req.user);
+    const clientId = forzado !== null ? forzado : req.query.client_id;
     if (!clientId) return res.status(400).json({ error: 'client_id requerido' });
 
     const params = [clientId];
@@ -98,6 +101,7 @@ router.get('/:id', verifyToken, async (req, res, next) => {
     const order = await dbGet('SELECT * FROM orders WHERE id = ?', [req.params.id]);
     if (!order) return res.status(404).json({ error: 'Orden no encontrada' });
 
+    if (!exigirAccesoACliente(req, res, order.client_id)) return;
     const events = await dbAll(
       'SELECT * FROM order_events WHERE order_id = ? ORDER BY created_at ASC',
       [req.params.id]
@@ -113,6 +117,9 @@ router.post('/', verifyToken, async (req, res, next) => {
   try {
     const { error, value } = createSchema.validate(req.body);
     if (error) { error.isJoi = true; throw error; }
+
+    // No se puede crear a nombre de otro negocio.
+    if (!exigirAccesoACliente(req, res, value.client_id)) return;
 
     const order = await createOrder(value, req.user?.id);
     res.status(201).json({ success: true, data: order });
@@ -176,6 +183,7 @@ router.patch('/:id/status', verifyToken, async (req, res, next) => {
     const order = await dbGet('SELECT * FROM orders WHERE id = ?', [req.params.id]);
     if (!order) return res.status(404).json({ error: 'Orden no encontrada' });
 
+    if (!exigirAccesoACliente(req, res, order.client_id)) return;
     if (order.status === value.status) {
       return res.json({ success: true, data: parseOrder(order), message: 'Sin cambios' });
     }
@@ -214,6 +222,7 @@ router.post('/:id/confirm', verifyToken, async (req, res, next) => {
     const order = await dbGet('SELECT * FROM orders WHERE id = ?', [req.params.id]);
     if (!order) return res.status(404).json({ error: 'Orden no encontrada' });
     if (order.status !== 'por_confirmar') {
+    if (!exigirAccesoACliente(req, res, order.client_id)) return;
       return res.status(409).json({ error: 'Esta orden ya estaba confirmada' });
     }
 
@@ -256,6 +265,7 @@ router.patch('/:id', verifyToken, async (req, res, next) => {
     const order = await dbGet('SELECT * FROM orders WHERE id = ?', [req.params.id]);
     if (!order) return res.status(404).json({ error: 'Orden no encontrada' });
 
+    if (!exigirAccesoACliente(req, res, order.client_id)) return;
     const sets = [];
     const params = [];
     for (const [key, val] of Object.entries(value)) {

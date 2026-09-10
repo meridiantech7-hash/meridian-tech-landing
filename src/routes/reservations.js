@@ -1,6 +1,6 @@
 const express = require('express');
 const Joi = require('joi');
-const { verifyToken } = require('../middleware/auth');
+const { verifyToken, exigirAccesoACliente, clienteForzado } = require('../middleware/auth');
 const { dbGet, dbAll, dbRun } = require('../config/database');
 const { emitToClient } = require('./conversations');
 const logger = require('../utils/logger');
@@ -43,7 +43,10 @@ const updateSchema = Joi.object({
 // GET /api/reservations?client_id=1&date=2026-09-10  (por defecto: hoy)
 router.get('/', verifyToken, async (req, res, next) => {
   try {
-    const clientId = req.query.client_id;
+    // Forzado al cliente del usuario: el filtro no puede depender de lo que
+    // manda el navegador.
+    const forzado = clienteForzado(req.user);
+    const clientId = forzado !== null ? forzado : req.query.client_id;
     if (!clientId) return res.status(400).json({ error: 'client_id requerido' });
 
     const fecha = req.query.date; // YYYY-MM-DD, opcional (calendario de Colombia)
@@ -79,6 +82,7 @@ router.get('/:id', verifyToken, async (req, res, next) => {
     const reserva = await dbGet('SELECT * FROM reservations WHERE id = ?', [req.params.id]);
     if (!reserva) return res.status(404).json({ error: 'Reserva no encontrada' });
     res.json({ success: true, data: reserva });
+    if (!exigirAccesoACliente(req, res, reserva.client_id)) return;
   } catch (error) {
     next(error);
   }
@@ -89,6 +93,9 @@ router.post('/', verifyToken, async (req, res, next) => {
   try {
     const { error, value } = createSchema.validate(req.body);
     if (error) { error.isJoi = true; throw error; }
+
+    // No se puede crear a nombre de otro negocio.
+    if (!exigirAccesoACliente(req, res, value.client_id)) return;
 
     const reserva = await createReservation(value);
     res.status(201).json({ success: true, data: reserva });
@@ -131,6 +138,7 @@ router.patch('/:id', verifyToken, async (req, res, next) => {
     const reserva = await dbGet('SELECT * FROM reservations WHERE id = ?', [req.params.id]);
     if (!reserva) return res.status(404).json({ error: 'Reserva no encontrada' });
 
+    if (!exigirAccesoACliente(req, res, reserva.client_id)) return;
     const sets = [];
     const params = [];
     for (const [key, val] of Object.entries(value)) {

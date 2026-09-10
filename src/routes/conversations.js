@@ -1,6 +1,6 @@
 const express = require('express');
 const Joi = require('joi');
-const { verifyToken } = require('../middleware/auth');
+const { verifyToken, exigirAccesoACliente, clienteForzado } = require('../middleware/auth');
 const { dbGet, dbAll, dbRun } = require('../config/database');
 const geminiService = require('../services/geminiService');
 const metaSend = require('../services/metaSend');
@@ -31,7 +31,11 @@ const emitToClient = (clientId, event, payload) => {
 // GET /api/conversations?client_id=1 - Bandeja en vivo de un negocio
 router.get('/', verifyToken, async (req, res, next) => {
   try {
-    const clientId = req.query.client_id;
+    // Un usuario atado a una empresa solo puede listar la suya, diga lo que
+    // diga el parámetro: si el filtro dependiera de lo que manda el navegador,
+    // no sería un filtro de seguridad.
+    const forzado = clienteForzado(req.user);
+    const clientId = forzado !== null ? forzado : req.query.client_id;
     if (!clientId) {
       return res.status(400).json({ error: 'client_id requerido' });
     }
@@ -54,6 +58,7 @@ router.get('/:id/messages', verifyToken, async (req, res, next) => {
     if (!conversation) {
       return res.status(404).json({ error: 'Conversación no encontrada' });
     }
+    if (!exigirAccesoACliente(req, res, conversation.client_id)) return;
 
     const messages = await dbAll(
       'SELECT * FROM messages WHERE conversation_id = ? ORDER BY created_at ASC LIMIT 200',
@@ -73,6 +78,7 @@ router.post('/:id/pause', verifyToken, async (req, res, next) => {
     if (!conversation) {
       return res.status(404).json({ error: 'Conversación no encontrada' });
     }
+    if (!exigirAccesoACliente(req, res, conversation.client_id)) return;
 
     await dbRun('UPDATE conversations SET mode = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', ['human', conversation.id]);
     await dbRun(
@@ -96,6 +102,7 @@ router.post('/:id/resume', verifyToken, async (req, res, next) => {
     if (!conversation) {
       return res.status(404).json({ error: 'Conversación no encontrada' });
     }
+    if (!exigirAccesoACliente(req, res, conversation.client_id)) return;
 
     await dbRun('UPDATE conversations SET mode = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', ['bot', conversation.id]);
     await dbRun(
@@ -135,6 +142,7 @@ router.delete('/:id', verifyToken, async (req, res, next) => {
     if (!conversation) {
       return res.status(404).json({ error: 'Conversación no encontrada' });
     }
+    if (!exigirAccesoACliente(req, res, conversation.client_id)) return;
 
     // Se cuenta antes de borrar, para poder decir qué se llevó — que es la
     // diferencia entre confirmar un borrado y confiar en que salió bien.
@@ -188,6 +196,7 @@ router.post('/:id/messages', verifyToken, async (req, res, next) => {
     if (!conversation) {
       return res.status(404).json({ error: 'Conversación no encontrada' });
     }
+    if (!exigirAccesoACliente(req, res, conversation.client_id)) return;
 
     const dispatch = await metaSend.sendText({
       channelType: conversation.channel_type,

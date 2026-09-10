@@ -1,6 +1,6 @@
 const express = require('express');
 const Joi = require('joi');
-const { verifyToken } = require('../middleware/auth');
+const { verifyToken, exigirAccesoACliente } = require('../middleware/auth');
 const { dbGet } = require('../config/database');
 const geminiService = require('../services/geminiService');
 const logger = require('../utils/logger');
@@ -43,6 +43,7 @@ router.get('/modelos', verifyToken, async (req, res, next) => {
  */
 router.get('/:clientId/diagnostico', verifyToken, async (req, res, next) => {
   try {
+    if (!exigirAccesoACliente(req, res, req.params.clientId)) return;
     const config = await geminiService.getBotConfig(req.params.clientId);
     const inicio = Date.now();
 
@@ -76,6 +77,7 @@ router.get('/:clientId/diagnostico', verifyToken, async (req, res, next) => {
 // GET /api/bot-config/:clientId - Ver configuración del nodo de IA de un cliente
 router.get('/:clientId', verifyToken, async (req, res, next) => {
   try {
+    if (!exigirAccesoACliente(req, res, req.params.clientId)) return;
     const client = await dbGet('SELECT id, name FROM clients WHERE id = ?', [req.params.clientId]);
     if (!client) return res.status(404).json({ error: 'Cliente no encontrado' });
 
@@ -97,6 +99,7 @@ router.get('/:clientId', verifyToken, async (req, res, next) => {
 // PUT /api/bot-config/:clientId - Crear/actualizar reglas y conocimiento previo
 router.put('/:clientId', verifyToken, async (req, res, next) => {
   try {
+    if (!exigirAccesoACliente(req, res, req.params.clientId)) return;
     const client = await dbGet('SELECT id FROM clients WHERE id = ?', [req.params.clientId]);
     if (!client) return res.status(404).json({ error: 'Cliente no encontrado' });
 

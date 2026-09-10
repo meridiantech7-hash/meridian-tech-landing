@@ -4,8 +4,17 @@ const { dbGet, dbRun, dbAll } = require('../config/database');
 const logger = require('../utils/logger');
 
 const generateTokens = (user) => {
+  // client_id viaja en el token para no tener que ir a la base en cada
+  // petición. Va como null explícito cuando el usuario es de MeridianTech:
+  // así el middleware distingue "no tiene empresa asignada, ve todo" de
+  // "el token es viejo y no trae el campo".
   const accessToken = jwt.sign(
-    { id: user.id, email: user.email, role: user.role },
+    {
+      id: user.id,
+      email: user.email,
+      role: user.role,
+      client_id: user.client_id === undefined ? null : user.client_id
+    },
     process.env.JWT_SECRET,
     { expiresIn: process.env.JWT_EXPIRES_IN || '24h' }
   );

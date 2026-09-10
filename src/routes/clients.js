@@ -1,6 +1,6 @@
 const express = require('express');
 const Joi = require('joi');
-const { verifyToken } = require('../middleware/auth');
+const { verifyToken, exigirAccesoACliente, clienteForzado, esStaff } = require('../middleware/auth');
 const { dbGet, dbAll, dbRun } = require('../config/database');
 const logger = require('../utils/logger');
 
@@ -34,6 +34,10 @@ router.get('/', verifyToken, async (req, res, next) => {
     //
     // El valor por omisión sigue siendo 'active' para no cambiarle la vista de
     // siempre al panel; 'prospect', 'inactive' o 'all' se piden explícitos.
+    // Un usuario atado a una empresa no lista clientes: se ve a sí mismo y
+    // nada más. La lista completa es del equipo de MeridianTech.
+    const forzado = clienteForzado(req.user);
+
     const estadosValidos = ['active', 'prospect', 'inactive', 'all'];
     const estado = estadosValidos.includes(req.query.status) ? req.query.status : 'active';
     const estadoClause = estado === 'all' ? '1=1' : 'c.status = ?';
@@ -58,16 +62,16 @@ router.get('/', verifyToken, async (req, res, next) => {
        LEFT JOIN subscriptions s ON c.id = s.client_id AND s.status = 'active'
        LEFT JOIN plans p ON s.plan_id = p.id
        LEFT JOIN transactions t ON c.id = t.client_id
-       WHERE ${estadoClause} ${searchClause}
+       WHERE ${estadoClause} ${searchClause} ${forzado !== null ? 'AND c.id = ?' : ''}
        GROUP BY c.id
        ORDER BY c.created_at DESC
        LIMIT ? OFFSET ?`,
-      [...estadoParams, ...searchParams, limit, offset]
+      [...estadoParams, ...searchParams, ...(forzado !== null ? [forzado] : []), limit, offset]
     );
 
     const countResult = await dbGet(
-      `SELECT COUNT(*) as total FROM clients c WHERE ${estadoClause} ${searchClause}`,
-      [...estadoParams, ...searchParams]
+      `SELECT COUNT(*) as total FROM clients c WHERE ${estadoClause} ${searchClause} ${forzado !== null ? 'AND c.id = ?' : ''}`,
+      [...estadoParams, ...searchParams, ...(forzado !== null ? [forzado] : [])]
     );
     const total = countResult.total;
 
@@ -100,6 +104,7 @@ router.get('/:id', verifyToken, async (req, res, next) => {
     if (!client) {
       return res.status(404).json({ error: 'Cliente no encontrado' });
     }
+    if (!exigirAccesoACliente(req, res, client.id)) return;
 
     // Estado de cuenta: suscripciones activas con plan y fecha de corte
     const subscriptions = await dbAll(
@@ -141,6 +146,12 @@ router.get('/:id', verifyToken, async (req, res, next) => {
 // POST /api/clients - Crear cliente
 router.post('/', verifyToken, async (req, res, next) => {
   try {
+    // Dar de alta negocios es del equipo de MeridianTech. Un usuario atado a
+    // una empresa no tiene por qué poder crear otras.
+    if (!esStaff(req.user)) {
+      return res.status(403).json({ error: 'Solo el equipo de MeridianTech puede crear negocios' });
+    }
+
     const { error, value } = clientSchema.validate(req.body);
     if (error) {
       error.isJoi = true;
@@ -188,6 +199,7 @@ router.put('/:id', verifyToken, async (req, res, next) => {
     if (!client) {
       return res.status(404).json({ error: 'Cliente no encontrado' });
     }
+    if (!exigirAccesoACliente(req, res, client.id)) return;
 
     const { error, value } = clientSchema.validate(req.body, { presence: 'optional' });
     if (error) {
@@ -229,6 +241,7 @@ router.delete('/:id', verifyToken, async (req, res, next) => {
     if (!client) {
       return res.status(404).json({ error: 'Cliente no encontrado' });
     }
+    if (!exigirAccesoACliente(req, res, client.id)) return;
 
     await dbRun('UPDATE clients SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', ['inactive', req.params.id]);
 
@@ -252,6 +265,7 @@ router.get('/:id/history', verifyToken, async (req, res, next) => {
     if (!client) {
       return res.status(404).json({ error: 'Cliente no encontrado' });
     }
+    if (!exigirAccesoACliente(req, res, client.id)) return;
 
     const transactions = await dbAll(
       `SELECT t.*, p.name as plan_name

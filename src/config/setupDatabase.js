@@ -39,7 +39,17 @@ const migrations = [
   // Se migran solo los modelos que se midieron lentos o que dejaron de estar
   // disponibles; si alguien eligió otro a propósito, se respeta.
   `UPDATE bot_configs SET ai_model = 'gemini-3.5-flash-lite'
-     WHERE ai_model IN ('gemini-3.6-flash','gemini-2.5-flash','gemini-1.5-flash','gemini-2.0-flash')`
+     WHERE ai_model IN ('gemini-3.6-flash','gemini-2.5-flash','gemini-1.5-flash','gemini-2.0-flash')`,
+  // A qué empresa pertenece cada usuario del panel.
+  //
+  // NULL = personal de MERIDIANTECH, que sí necesita ver todos los negocios.
+  // Con un número, ese usuario solo puede ver ESE cliente: es lo que impide
+  // que el dueño de un restaurante lea las conversaciones y las ventas de
+  // otro cambiando un número en la URL. Ver middleware/auth.js.
+  //
+  // Los usuarios que ya existen (Miguel y Juan) quedan en NULL, que es lo
+  // correcto: son los dueños de MeridianTech.
+  "ALTER TABLE users ADD COLUMN client_id INTEGER REFERENCES clients(id)"
 ];
 
 async function runMigrations() {

@@ -11,6 +11,7 @@ const rateLimit = require('express-rate-limit');
 const path = require('path');
 
 const logger = require('./utils/logger');
+const { puedeVerCliente } = require('./middleware/auth');
 const errorHandler = require('./middleware/errorHandler');
 const setupDatabase = require('./config/setupDatabase');
 
@@ -162,8 +163,22 @@ io.use((socket, next) => {
 io.on('connection', (socket) => {
   logger.debug('Socket conectado', { userId: socket.user?.id });
 
-  // El dueño/admin se suscribe a la bandeja en vivo de un negocio puntual
+  // El dueño/admin se suscribe a la bandeja en vivo de un negocio puntual.
+  //
+  // La sala hay que autorizarla, no solo autenticarla: el token ya se verificó
+  // arriba, pero sin esta revisión cualquier usuario con sesión podía pedir la
+  // sala de OTRA empresa y quedarse escuchando sus mensajes en vivo. Es la
+  // misma fuga que la de la API, por otra puerta — y más silenciosa, porque no
+  // deja rastro de una petición HTTP.
   socket.on('join_client', (clientId) => {
+    if (!puedeVerCliente(socket.user, clientId)) {
+      logger.warn('Socket intentó entrar a la sala de otro negocio', {
+        userId: socket.user?.id,
+        empresaDelUsuario: socket.user?.client_id,
+        empresaPedida: clientId
+      });
+      return;
+    }
     socket.join(`client:${clientId}`);
     logger.debug('Socket unido a sala de cliente', { clientId, userId: socket.user?.id });
   });

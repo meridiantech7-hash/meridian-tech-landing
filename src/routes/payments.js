@@ -1,6 +1,6 @@
 const express = require('express');
 const Joi = require('joi');
-const { verifyToken } = require('../middleware/auth');
+const { verifyToken, exigirAccesoACliente, clienteForzado } = require('../middleware/auth');
 const { dbGet, dbAll, dbRun } = require('../config/database');
 const boldService = require('../services/boldService');
 const metaSend = require('../services/metaSend');
@@ -132,6 +132,7 @@ router.post('/create', verifyToken, async (req, res, next) => {
     if (!client) {
       return res.status(404).json({ error: 'Cliente no encontrado' });
     }
+    if (!exigirAccesoACliente(req, res, client.id)) return;
 
     const plan = await dbGet('SELECT * FROM plans WHERE id = ?', [value.plan_id]);
     if (!plan) {
@@ -190,6 +191,7 @@ router.get('/:id', verifyToken, async (req, res, next) => {
     if (!transaction) {
       return res.status(404).json({ error: 'Transacción no encontrada' });
     }
+    if (!exigirAccesoACliente(req, res, transaction.client_id)) return;
 
     res.json({ success: true, data: transaction });
   } catch (error) {
@@ -205,12 +207,20 @@ router.get('/history/all', verifyToken, async (req, res, next) => {
     const offset = (page - 1) * limit;
     const status = req.query.status;
 
-    let where = '';
+    const condiciones = [];
     const params = [];
     if (status) {
-      where = 'WHERE t.status = ?';
+      condiciones.push('t.status = ?');
       params.push(status);
     }
+    // El historial de pagos de todos los negocios es del equipo de
+    // MeridianTech; un usuario de una empresa solo ve los suyos.
+    const forzado = clienteForzado(req.user);
+    if (forzado !== null) {
+      condiciones.push('t.client_id = ?');
+      params.push(forzado);
+    }
+    const where = condiciones.length ? 'WHERE ' + condiciones.join(' AND ') : '';
 
     const transactions = await dbAll(
       `SELECT t.*, c.name as client_name, c.email as client_email, p.name as plan_name
