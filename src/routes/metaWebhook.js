@@ -293,6 +293,10 @@ async function processMessage(clientId, msg) {
     // mismo candado del dueño y NUNCA la responde el asistente de ventas — el
     // guion de Valeria tiene prohibido hablar de esto, y acá se resuelve sin
     // pasar por el modelo para que no haya forma de que se filtre redactado.
+    if (costService.esConsultaDePaquetes(msg.text)) {
+      await responderDirecto(clientId, conversation, msg, costService.resumenPaquetesParaWhatsApp());
+      return;
+    }
     if (costService.esConsultaDeCostos(msg.text)) {
       const resumen = await costService.resumenParaWhatsApp(msg.text);
       await responderDirecto(clientId, conversation, msg, resumen);

@@ -239,6 +239,14 @@ const calcularPlan = (plan, opciones = {}) => {
       cobro: plan.implementation_price || 0,
       costoEquipoYMontaje: implementacionCosto,
       comisionBold: comisionImplementacion,
+      // Dos vistas a proposito. "Bruta" es cobro - costo del equipo, que es
+      // como se piensa el negocio al cotizar. "Neta" descuenta ademas la
+      // comision de Bold, que es la plata que de verdad entra a la cuenta.
+      // Si se cobra por transferencia, la comision no existe y la bruta es la
+      // real — por eso se muestran las dos y no una sola.
+      utilidadBruta: (plan.implementation_price || 0) - implementacionCosto,
+      margenBruto: plan.implementation_price
+        ? ((plan.implementation_price || 0) - implementacionCosto) / plan.implementation_price : 0,
       utilidad: utilidadImplementacion,
       margen: plan.implementation_price ? utilidadImplementacion / plan.implementation_price : 0
     },
@@ -246,6 +254,70 @@ const calcularPlan = (plan, opciones = {}) => {
       costoReferido,
       utilidad: utilidad + utilidadImplementacion - costoReferido
     }
+  };
+};
+
+/**
+ * Paquetes adicionales: mensajes o minutos sueltos, por fuera del plan.
+ *
+ * El precio NO se saca cargándole al cliente el gasto fijo de la empresa (la
+ * contadora, Railway, Claude). Eso ya lo cubre la mensualidad. Un paquete
+ * adicional solo tiene que cubrir su propio consumo y dejar margen — cargarle
+ * otra vez la estructura seria cobrar dos veces lo mismo y sacaría precios que
+ * nadie compra.
+ *
+ * Se calcula desde el costo real medido y se redondea hacia arriba a una cifra
+ * vendible: nadie cotiza "$152.500".
+ */
+const MARGEN_OBJETIVO_PAQUETES = 0.80;
+
+const TAMANOS = {
+  mensajes: [5000, 10000, 25000, 50000],
+  minutosWhatsapp: [100, 300, 600, 1000],
+  minutosAudio: [50, 100, 200, 400]
+};
+
+/** Redondea hacia arriba a la decena de miles: una cifra que se pueda cotizar. */
+const aPrecioVendible = (n) => Math.ceil(n / 10000) * 10000;
+
+const armarPaquete = (cantidad, costoUnitario, unidad, precioExcedente, margen) => {
+  const costo = cantidad * costoUnitario;
+  const precio = aPrecioVendible(costo / (1 - margen));
+  const utilidad = precio - costo;
+  return {
+    cantidad,
+    unidad,
+    costo,
+    precio,
+    utilidad,
+    margen: utilidad / precio,
+    precioUnitario: precio / cantidad,
+    // Lo mismo comprado como excedente suelto, para mostrar el ahorro: es el
+    // argumento de venta del paquete, y de paso confirma que el paquete no
+    // salga más caro que no comprarlo.
+    costaríaSuelto: precioExcedente ? cantidad * precioExcedente : null,
+    ahorro: precioExcedente ? cantidad * precioExcedente - precio : null
+  };
+};
+
+const paquetesSugeridos = (margen = MARGEN_OBJETIVO_PAQUETES) => {
+  const porMensaje = costoIAPorMensaje();
+  const porMinuto = META.costoMinutoLlamadaCOP;
+  const porMinutoAudio = costoPorMinutoElevenLabs();
+
+  return {
+    margenObjetivo: margen,
+    costosUnitarios: {
+      mensaje: porMensaje,
+      minutoWhatsapp: porMinuto,
+      minutoAudio: porMinutoAudio
+    },
+    mensajes: TAMANOS.mensajes.map((n) =>
+      armarPaquete(n, porMensaje, 'mensajes', 50, margen)),
+    minutosWhatsapp: TAMANOS.minutosWhatsapp.map((n) =>
+      armarPaquete(n, porMinuto, 'minutos de llamada', 800, margen)),
+    minutosAudio: TAMANOS.minutosAudio.map((n) =>
+      armarPaquete(n, porMinutoAudio, 'minutos de audio', null, margen))
   };
 };
 
@@ -280,6 +352,18 @@ const FRASES_COSTO = [
 ];
 
 const normalizar = (s) => (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+
+const FRASES_PAQUETES = [
+  'paquete', 'paquetes', 'mensajes adicionales', 'minutos adicionales',
+  'recarga', 'cuanto cobro por mensajes', 'cuánto cobro por mensajes',
+  'venderle mensajes', 'venderle minutos', 'adicional de mensajes', 'adicional de minutos'
+];
+
+const esConsultaDePaquetes = (texto) => {
+  const t = normalizar(texto);
+  if (!t) return false;
+  return FRASES_PAQUETES.some((f) => t.includes(normalizar(f)));
+};
 
 const esConsultaDeCostos = (texto) => {
   const t = normalizar(texto);
@@ -316,8 +400,44 @@ const resumenParaWhatsApp = async (texto) => {
     `Dólar a ${datos.tasaUSDCOP}.`;
 };
 
+/** Los paquetes adicionales, listos para mandar por WhatsApp al dueño. */
+const resumenPaquetesParaWhatsApp = () => {
+  const SALTO = String.fromCharCode(10);
+  const d = paquetesSugeridos();
+  const linea = (x) =>
+    `${x.cantidad.toLocaleString('es-CO')} ${x.unidad}: ${pesos(x.precio)} ` +
+    `(cuesta ${pesos(x.costo)}, margen ${pct(x.margen)})` +
+    (x.ahorro ? ` · suelto costaría ${pesos(x.costaríaSuelto)}` : '');
+
+  logger.info('Consulta de paquetes adicionales respondida al dueño');
+
+  return `PAQUETES SUGERIDOS (margen objetivo ${pct(d.margenObjetivo)})
+
+` +
+    `MENSAJES
+${d.mensajes.map(linea).join(SALTO)}
+
+` +
+    `MINUTOS DE LLAMADA
+${d.minutosWhatsapp.map(linea).join(SALTO)}
+
+` +
+    `MINUTOS DE AUDIO
+${d.minutosAudio.map(linea).join(SALTO)}
+
+` +
+    `Costo real: ${pesos(d.costosUnitarios.mensaje)} por mensaje, ` +
+    `${pesos(d.costosUnitarios.minutoWhatsapp)} por minuto de llamada, ` +
+    `${pesos(d.costosUnitarios.minutoAudio)} por minuto de audio.
+` +
+    `El precio del paquete NO carga el gasto fijo de la empresa: eso ya lo cubre la mensualidad.`;
+};
+
 module.exports = {
   esConsultaDeCostos,
+  esConsultaDePaquetes,
+  resumenPaquetesParaWhatsApp,
+  paquetesSugeridos,
   resumenParaWhatsApp,
   panorama,
   calcularPlan,
