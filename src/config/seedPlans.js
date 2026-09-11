@@ -3,51 +3,41 @@ const { dbGet, dbRun, close } = require('./database');
 const logger = require('../utils/logger');
 
 /**
- * Precios recalculados dos veces (septiembre 2026):
+ * Precios recalculados dos veces (septiembre 2026) — ver historial completo
+ * en el git log de este archivo para el detalle de las dos primeras vueltas
+ * (margen cero corregido, luego recargo vs. margen neto corregido).
  *
- * 1ra vuelta: los anteriores dejaban la implementación del plan Básico en
- * margen cero o negativo — un equipo de hasta $850.000 se comía toda la
- * implementación de $850.000, sin dejar nada para las APIs y los permisos
- * que la empresa paga por su cuenta.
+ * 3ra vuelta (bajada de precio, misma semana): decisión de negocio — bajar
+ * el precio de entrada para ser más competitivo, aceptando un margen real
+ * más delgado (42-47% en vez de 60%+) pero todavía sano, verificado con la
+ * hoja de costos real (Gemini, Meta, Twilio, ElevenLabs, Bold, fijos —
+ * "Motor de Costo Real"). El precio de implementación NO cambió — solo la
+ * mensualidad.
  *
- * 2da vuelta: la 1ra vuelta calculaba la mensualidad con un recargo del 35%
- * sobre el costo, que da un MARGEN NETO real de solo 26-30% — no el 60%+ que
- * se pidió después. Para 60%+ de margen neto el precio tiene que ser
- * costo / (1 - margen), no costo × (1 + recargo): son operaciones distintas
- * y la primera exige un precio bastante más alto para el mismo costo.
- *
- * De paso se corrigió el costo de minutos: se había estimado en $300 COP/min
- * sin confirmar; el real (WhatsApp Calling, sin número aparte) es $44 COP/min
- * — con el correcto, los minutos casi no mueven el precio (la diferencia
- * entre 50 y 1.000 minutos es de apenas ~$42.000 en costo).
- *
- * Insumos:
- *   - Tablet Galaxy A11+ (Básico/Pro, y una de las dos de Premium): $650.000–$850.000 → 750.000
- *   - Segunda tablet de Premium (gama superior): $1.000.000–$1.200.000 → 1.100.000
- *   - Gastos fijos mensuales a cubrir: $1.000.000
- *   - Costo real estimado: ~$15 COP/mensaje (sin confirmar), $44 COP/minuto (confirmado)
- *
- * Supuesto SIN confirmar todavía — avisar antes de dar esto por definitivo:
- *   - Clientes activos para repartir el gasto fijo: 8 (ajustable, es la
- *     variable que más mueve la mensualidad). Ver la calculadora del PR.
- *
- * Fórmula (misma que la calculadora interactiva):
- *   implementación = costo del equipo × 1.3 (margen 30%) + 300.000 (puesta en marcha)
- *   costo total = mensajes×15 + minutos×44 + (gasto_fijo / clientes)
- *   mensualidad = costo total / (1 − 0.60), redondeada con margen de sobra por encima del 60%
+ * De paso:
+ *   - Pro y Premium suben los minutos de llamada incluidos (Pro 400→1.000,
+ *     Premium 1.000→2.500) — con el costo real de WhatsApp Calling
+ *     ($44 COP/min) esto casi no mueve el costo real, así que se puede dar
+ *     más sin arriesgar el margen.
+ *   - Se agregan minutos de audio con voz de personalidad (ElevenLabs) como
+ *     dato real del plan, no solo texto de venta — ver audio_minutes_included
+ *     en setupDatabase.js.
+ *   - Se agrega monthly_reports_included: Pro 2/mes (lo que el dueño pida por
+ *     WhatsApp administrativo), Premium 4/mes (con análisis de mercado y plan
+ *     de acción — ver ownerService.js para dónde vive esa lógica).
  */
 const plans = [
   {
     name: 'Básico',
     description: 'Automatización esencial para empezar a escalar tu operación',
-    price: 1500000,
+    price: 800000,
     implementation_price: 1275000,
     currency: 'COP',
     billing_cycle: 'monthly',
     features: [
       'Automatización de hasta 3 procesos',
       'Soporte por WhatsApp',
-      'Reportes mensuales',
+      '100 min/mes de audio con voz de personalidad',
       '1 usuario administrador'
     ],
     max_users: 1,
@@ -55,12 +45,14 @@ const plans = [
     messages_included: 30000,
     message_overage_price: 50,
     call_minutes_included: 0,
-    minute_overage_price: 0
+    minute_overage_price: 0,
+    audio_minutes_included: 100,
+    monthly_reports_included: 0
   },
   {
     name: 'Pro',
     description: 'Automatización avanzada con IA para equipos en crecimiento',
-    price: 2750000,
+    price: 1200000,
     implementation_price: 1275000,
     currency: 'COP',
     billing_cycle: 'monthly',
@@ -68,20 +60,23 @@ const plans = [
       'Automatización de hasta 10 procesos',
       'Integraciones con IA',
       'Soporte prioritario',
-      'Reportes en tiempo real',
+      '1.000 min/mes de llamada · 200 min/mes de audio con personalidad',
+      '2 reportes al mes por WhatsApp administrativo, con lo que pidas',
       'Hasta 5 usuarios administradores'
     ],
     max_users: 5,
     max_storage: 25,
     messages_included: 60000,
     message_overage_price: 50,
-    call_minutes_included: 400,
-    minute_overage_price: 800
+    call_minutes_included: 1000,
+    minute_overage_price: 800,
+    audio_minutes_included: 200,
+    monthly_reports_included: 2
   },
   {
     name: 'Premium',
-    description: 'Solución integral de automatización e IA a medida',
-    price: 5200000,
+    description: 'Solución integral de automatización e IA a medida, con asesoría de crecimiento',
+    price: 1800000,
     implementation_price: 2705000,
     currency: 'COP',
     billing_cycle: 'monthly',
@@ -89,16 +84,20 @@ const plans = [
       'Automatizaciones ilimitadas',
       'IA personalizada para tu negocio',
       'Soporte dedicado 24/7',
-      'Dashboard ejecutivo en tiempo real',
-      'Usuarios ilimitados',
-      'Consultoría estratégica mensual'
+      '2.500 min/mes de llamada · 400 min/mes de audio con personalidad',
+      'Agente de ventas y marketing: asesoría de crecimiento de negocio',
+      '4 reportes al mes por WhatsApp administrativo, con análisis de mercado y plan de acción',
+      'Inventario en tiempo real con aviso de próximos a agotarse',
+      'Usuarios ilimitados'
     ],
     max_users: null,
     max_storage: 100,
     messages_included: 120000,
     message_overage_price: 50,
-    call_minutes_included: 1000,
-    minute_overage_price: 800
+    call_minutes_included: 2500,
+    minute_overage_price: 800,
+    audio_minutes_included: 400,
+    monthly_reports_included: 4
   }
 ];
 
@@ -112,7 +111,8 @@ async function seedPlans() {
         logger.info(`   ↺ Plan "${plan.name}" ya existe, actualizando...`);
         await dbRun(
           `UPDATE plans SET description = ?, price = ?, implementation_price = ?, currency = ?, billing_cycle = ?, features = ?, max_users = ?, max_storage = ?,
-             messages_included = ?, message_overage_price = ?, call_minutes_included = ?, minute_overage_price = ?, updated_at = CURRENT_TIMESTAMP
+             messages_included = ?, message_overage_price = ?, call_minutes_included = ?, minute_overage_price = ?,
+             audio_minutes_included = ?, monthly_reports_included = ?, updated_at = CURRENT_TIMESTAMP
            WHERE id = ?`,
           [
             plan.description,
@@ -127,6 +127,8 @@ async function seedPlans() {
             plan.message_overage_price,
             plan.call_minutes_included,
             plan.minute_overage_price,
+            plan.audio_minutes_included,
+            plan.monthly_reports_included,
             existing.id
           ]
         );
@@ -134,8 +136,9 @@ async function seedPlans() {
         logger.info(`   ✓ Creando plan "${plan.name}" - $${plan.price.toLocaleString('es-CO')} COP`);
         await dbRun(
           `INSERT INTO plans (name, description, price, implementation_price, currency, billing_cycle, features, max_users, max_storage,
-             messages_included, message_overage_price, call_minutes_included, minute_overage_price)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+             messages_included, message_overage_price, call_minutes_included, minute_overage_price,
+             audio_minutes_included, monthly_reports_included)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             plan.name,
             plan.description,
@@ -149,7 +152,9 @@ async function seedPlans() {
             plan.messages_included,
             plan.message_overage_price,
             plan.call_minutes_included,
-            plan.minute_overage_price
+            plan.minute_overage_price,
+            plan.audio_minutes_included,
+            plan.monthly_reports_included
           ]
         );
       }

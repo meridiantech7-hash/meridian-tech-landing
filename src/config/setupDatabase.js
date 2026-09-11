@@ -12,6 +12,14 @@ const migrations = [
   // Antes solo vivía como texto suelto en el guion del bot (seedInternal.js) —
   // ningún sistema podía consultarla. Ahora es un dato real del plan.
   "ALTER TABLE plans ADD COLUMN implementation_price INTEGER DEFAULT 0",
+  // Minutos de audio con voz de personalidad (ElevenLabs) incluidos en el
+  // plan — antes solo existía como número suelto en la hoja de costos, ahora
+  // es un dato real del plan igual que call_minutes_included.
+  "ALTER TABLE plans ADD COLUMN audio_minutes_included INTEGER DEFAULT 0",
+  // Reportes de negocio que el bot puede generar por WhatsApp administrativo
+  // (ver ownerService.js) — Pro: 2/mes con lo que el dueño pida; Premium: 4/mes
+  // con análisis de mercado y plan de acción. 0 = el plan no incluye reportes.
+  "ALTER TABLE plans ADD COLUMN monthly_reports_included INTEGER DEFAULT 0",
   "ALTER TABLE clients ADD COLUMN is_internal INTEGER DEFAULT 0",
   // Por defecto 1 (true): no cambia el comportamiento de ningún cliente que ya
   // toma pedidos (capa A, restaurantes). Se apaga explícitamente solo donde no
@@ -102,6 +110,8 @@ CREATE TABLE IF NOT EXISTS plans (
   call_minutes_included INTEGER DEFAULT 0,
   minute_overage_price INTEGER DEFAULT 0,
   implementation_price INTEGER DEFAULT 0, -- cobro único de puesta en marcha, aparte de la mensualidad
+  audio_minutes_included INTEGER DEFAULT 0, -- minutos de voz ElevenLabs incluidos por mes
+  monthly_reports_included INTEGER DEFAULT 0, -- reportes de negocio por WhatsApp administrativo, 0 = no incluye
   status TEXT DEFAULT 'active',
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
