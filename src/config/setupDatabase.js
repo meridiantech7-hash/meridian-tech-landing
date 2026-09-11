@@ -321,6 +321,26 @@ CREATE TABLE IF NOT EXISTS order_events (
   FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE
 );
 
+-- Inventario en tiempo real (plan Premium). Arranca vacía por cliente — el
+-- dueño la puebla por WhatsApp ("agrega 50 unidades de X"). Se descuenta sola
+-- cuando una orden pasa de "por_confirmar" a "recibido" (inventoryService.js,
+-- enganchado en POST /api/orders/:id/confirm), cruzando por nombre contra
+-- orders.items. Cuando stock_quantity cruza low_stock_threshold se avisa al
+-- dueño por WhatsApp sin que lo pida.
+CREATE TABLE IF NOT EXISTS products (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  client_id INTEGER NOT NULL,
+  name TEXT NOT NULL,
+  stock_quantity INTEGER NOT NULL DEFAULT 0,
+  low_stock_threshold INTEGER NOT NULL DEFAULT 5,
+  unit TEXT DEFAULT 'unidad',
+  status TEXT DEFAULT 'active',
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE,
+  UNIQUE(client_id, name)
+);
+
 -- Índices para mejor desempeño
 CREATE INDEX IF NOT EXISTS idx_orders_client_status ON orders(client_id, status);
 CREATE INDEX IF NOT EXISTS idx_orders_created ON orders(created_at);
@@ -342,6 +362,7 @@ CREATE INDEX IF NOT EXISTS idx_conversations_last_msg ON conversations(last_mess
 CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(conversation_id);
 CREATE INDEX IF NOT EXISTS idx_messages_created ON messages(created_at);
 CREATE INDEX IF NOT EXISTS idx_handoff_conversation ON handoff_events(conversation_id);
+CREATE INDEX IF NOT EXISTS idx_products_client ON products(client_id);
 `;
 
 async function setupDatabase() {

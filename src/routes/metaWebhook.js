@@ -7,6 +7,9 @@ const { emitToClient } = require('./conversations');
 const { createOrder } = require('./orders');
 const ventaService = require('../services/ventaService');
 const ownerService = require('../services/ownerService');
+const planService = require('../services/planService');
+const reportService = require('../services/reportService');
+const inventoryService = require('../services/inventoryService');
 const logger = require('../utils/logger');
 
 const router = express.Router();
@@ -225,6 +228,32 @@ async function processMessage(clientId, msg) {
   } else if (ownerService.esConsultaReservas(msg.text)) {
     const resumen = await ownerService.resumenReservasHoy(clientId);
     await responderDirecto(clientId, conversation, msg, resumen);
+    return;
+  } else if (inventoryService.esComandoInventario(msg.text)) {
+    // Inventario en tiempo real es de Premium — cualquier otro plan lo tiene
+    // bloqueado de forma fija, sin gastar la llamada de interpretación.
+    const plan = await planService.getPlanActivo(clientId);
+    if (plan?.name !== 'Premium') {
+      await responderDirecto(clientId, conversation, msg, 'El inventario en tiempo real es parte del plan Premium — con tu plan actual esto se sigue manejando desde la tablet.');
+      return;
+    }
+    const ajuste = await inventoryService.ajustarInventario(clientId, msg.text);
+    await responderDirecto(clientId, conversation, msg, ajuste.mensaje);
+    return;
+  } else if (reportService.esSolicitudDeReporte(msg.text)) {
+    const plan = await planService.getPlanActivo(clientId);
+    if (!plan || !plan.monthly_reports_included) {
+      await responderDirecto(clientId, conversation, msg, 'Los reportes por WhatsApp son de los planes Pro y Premium — con tu plan actual no están incluidos.');
+      return;
+    }
+    const usados = await planService.reportesUsadosEsteMes(clientId);
+    if (usados >= plan.monthly_reports_included) {
+      await responderDirecto(clientId, conversation, msg, `Ya usaste tus ${plan.monthly_reports_included} reportes de este mes — se reinician el 1° del próximo mes. Si necesitas uno ahora, escríbele al equipo de MeridianTech.`);
+      return;
+    }
+    const reporte = await reportService.generarReporte(clientId, plan, msg.text);
+    await responderDirecto(clientId, conversation, msg, reporte);
+    await planService.registrarReporteUsado(clientId, msg.text?.slice(0, 200));
     return;
   }
 
