@@ -175,6 +175,27 @@ const asegurarCliente = async (conversacion) => {
 };
 
 /**
+ * Datos para pagar por transferencia, o null si no están configurados.
+ *
+ * Van en variables de entorno y no en el código por dos razones: la cuenta
+ * puede cambiar sin tener que desplegar, y no queda un número de cuenta de la
+ * empresa escrito en un repositorio.
+ *
+ * PAGO_LLAVE es la llave de transferencias (Bre-B): el alias con el que se
+ * recibe sin dictar número de cuenta ni banco.
+ */
+const datosDeTransferencia = () => {
+  const llave = (process.env.PAGO_LLAVE || '').trim();
+  if (!llave) return null;
+  return {
+    llave,
+    titular: (process.env.PAGO_TITULAR || 'MERIDIAN TECH S.A.S.').trim(),
+    banco: (process.env.PAGO_BANCO || 'Bold').trim(),
+    nit: (process.env.PAGO_NIT || '902100512-0').trim()
+  };
+};
+
+/**
  * Genera el cobro para una conversación en la que el cliente pidió pagar.
  *
  * @returns {{ok:true, plan, orderId, enlace, enlaceQr, monto}|{ok:false, motivo}}
@@ -211,11 +232,44 @@ const generarCobro = async (conversacion) => {
     callbackUrl: `${APP_URL}/pagar/${orderId}`
   });
 
+  // Si Bold no dio el link, se cobra por transferencia en vez de perder la
+  // venta. Bold viene negando la llave con un "explicit deny" que no depende
+  // de nuestro código, y mientras eso se resuelve un cliente decidido no puede
+  // quedarse sin forma de pagar: se le pasan los datos de la cuenta.
+  //
+  // El cobro queda igual de registrado y con el mismo orderId, así que cuando
+  // Bold se habilite no hay que migrar nada. Lo único distinto es que la
+  // confirmación la hace una persona al ver la transferencia, no el webhook.
   if (!link.ok) {
-    logger.error('No se pudo crear el link de pago de Bold', {
-      orderId, clientId: cliente.id, plan: plan.name, motivo: link.motivo
+    const transferencia = datosDeTransferencia();
+
+    if (!transferencia) {
+      logger.error('No se pudo crear el link de pago y no hay datos de transferencia configurados', {
+        orderId, clientId: cliente.id, plan: plan.name, motivo: link.motivo
+      });
+      return { ok: false, motivo: `Bold no generó el link de pago: ${link.motivo}` };
+    }
+
+    await dbRun(
+      `INSERT INTO transactions
+        (client_id, plan_id, amount, currency, status, bold_transaction_id, description, payment_method)
+       VALUES (?, ?, ?, ?, 'pending', ?, ?, 'transferencia')`,
+      [cliente.id, plan.id, plan.price, plan.currency || 'COP', orderId, descripcion]
+    );
+
+    logger.info('Cobro generado por transferencia (Bold no disponible)', {
+      orderId, clientId: cliente.id, plan: plan.name, monto: plan.price,
+      conversationId: conversacion.id, motivoBold: link.motivo
     });
-    return { ok: false, motivo: `Bold no generó el link de pago: ${link.motivo}` };
+
+    return {
+      ok: true,
+      porTransferencia: true,
+      plan,
+      orderId,
+      monto: plan.price,
+      transferencia
+    };
   }
 
   await dbRun(

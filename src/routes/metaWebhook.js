@@ -571,11 +571,22 @@ async function enviarCobro(clientId, conversation, msg) {
   }
 
   const monto = '$' + Number(cobro.monto).toLocaleString('es-CO');
-  const texto =
-    `Perfecto. Te dejo el pago del plan ${cobro.plan.name} por ${monto} COP mensuales.\n\n` +
-    `${cobro.enlace}\n\n` +
-    `Puedes pagar con tarjeta, PSE o Nequi. Cuando lo hagas me llega la confirmación ` +
-    `y te contacto para coordinar la instalación.`;
+
+  // Dos formas de cobrar. La de transferencia entra cuando la pasarela no está
+  // disponible: se le pasa la llave en lugar de perder la venta. El mensaje
+  // cambia porque la promesa cambia — en la transferencia la confirmación no
+  // es automática, y decirle al cliente "me llega la confirmación" cuando en
+  // realidad alguien tiene que mirar el banco sería mentirle.
+  const texto = cobro.porTransferencia
+    ? `Perfecto. El plan ${cobro.plan.name} queda en ${monto} COP mensuales.\n\n` +
+      `Puedes transferir a la llave *${cobro.transferencia.llave}* ` +
+      `(${cobro.transferencia.titular}${cobro.transferencia.banco ? ' · ' + cobro.transferencia.banco : ''}).\n\n` +
+      `Cuando hagas la transferencia mándame el comprobante por acá y ` +
+      `te confirmo de una para coordinar la instalación.`
+    : `Perfecto. Te dejo el pago del plan ${cobro.plan.name} por ${monto} COP mensuales.\n\n` +
+      `${cobro.enlace}\n\n` +
+      `Puedes pagar con tarjeta, PSE o Nequi. Cuando lo hagas me llega la confirmación ` +
+      `y te contacto para coordinar la instalación.`;
 
   const envio = await metaSend.sendText({
     channelType: msg.channel_type,
@@ -595,14 +606,18 @@ async function enviarCobro(clientId, conversation, msg) {
     content: texto, delivered: envio.sent, created_at: new Date().toISOString()
   });
 
-  // El QR va aparte y no bloquea: si falla, el enlace ya salió y la venta sigue viva.
-  metaSend.sendImage({
-    channelType: msg.channel_type,
-    to: msg.end_customer_id,
-    imageUrl: cobro.enlaceQr,
-    caption: 'O escanea este código si prefieres',
-    phoneNumberId: msg.phone_number_id
-  }).catch(() => {});
+  // El QR va aparte y no bloquea: si falla, el enlace ya salió y la venta sigue
+  // viva. En el cobro por transferencia no hay QR que mandar — la llave ya va
+  // en el texto, que es lo que el cliente copia y pega en su banco.
+  if (!cobro.porTransferencia) {
+    metaSend.sendImage({
+      channelType: msg.channel_type,
+      to: msg.end_customer_id,
+      imageUrl: cobro.enlaceQr,
+      caption: 'O escanea este código si prefieres',
+      phoneNumberId: msg.phone_number_id
+    }).catch(() => {});
+  }
 
   emitToClient(clientId, 'conversation:payment_sent', {
     conversationId: conversation.id,
