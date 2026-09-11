@@ -1,6 +1,7 @@
 const axios = require('axios');
 const { dbGet, dbRun } = require('../config/database');
 const logger = require('../utils/logger');
+const planService = require('./planService');
 
 /**
  * Nodo de IA del flujo (Gemini Flash) — capa A (clientes de MeridianTech) y
@@ -182,8 +183,24 @@ const ETIQUETA_MEMORIA = /\n?MEMORIA:\s*(.+?)\s*$/is;
  * cualquier dato nuevo que haya aprendido — una única línea que el servidor
  * recorta antes de despachar el mensaje (ver `extraerMemoria`).
  */
-const buildSystemInstruction = (config, memoria = {}) => {
+const buildSystemInstruction = async (config, memoria = {}) => {
   let instruction = config.system_prompt || '';
+
+  // Plan Premium: el bot también actúa como agente de ventas/marketing de
+  // cara al cliente final, no solo en los reportes que pide el dueño — ver
+  // reportService.js para esos. Se busca el plan activo del negocio (no del
+  // cliente final) — es info interna, nunca se le dice al cliente qué plan
+  // tiene contratado su vendedor.
+  if (config.client_id) {
+    try {
+      const plan = await planService.getPlanActivo(config.client_id);
+      if (plan?.name === 'Premium') {
+        instruction += '\n\nEste negocio contrató el nivel de asesoría más alto: cuando la conversación lo amerite con naturalidad, puedes sugerir ideas de venta cruzada, promociones o mejoras para atraer más clientes — como lo haría un asesor de ventas, no un vendedor insistente. Nunca lo fuerces ni lo menciones si no viene al caso.';
+      }
+    } catch (e) {
+      logger.warn('No se pudo leer el plan activo para la personalidad del bot', { clientId: config.client_id, error: e.message });
+    }
+  }
 
   try {
     const rules = JSON.parse(config.business_rules || '{}');
@@ -322,7 +339,7 @@ const generateBotResponse = async (clientId, conversationHistory, incoming, mode
   }
 
   const contents = buildContents(conversationHistory, newMessagePart);
-  const systemInstruction = { parts: [{ text: buildSystemInstruction(config, memoria) }] };
+  const systemInstruction = { parts: [{ text: await buildSystemInstruction(config, memoria) }] };
 
   // Cuando se fuerza un modelo (diagnóstico) se prueba solo ese, para que la
   // medición sea del modelo pedido y no de un respaldo.

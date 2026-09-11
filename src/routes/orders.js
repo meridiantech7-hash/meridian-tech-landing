@@ -4,6 +4,9 @@ const { verifyToken, exigirAccesoACliente, clienteForzado } = require('../middle
 const { dbGet, dbAll, dbRun } = require('../config/database');
 const { emitToClient } = require('./conversations');
 const logger = require('../utils/logger');
+const planService = require('../services/planService');
+const inventoryService = require('../services/inventoryService');
+const metaSend = require('../services/metaSend');
 
 const router = express.Router();
 
@@ -216,6 +219,35 @@ router.patch('/:id/status', verifyToken, async (req, res, next) => {
   }
 });
 
+/**
+ * Avisa al dueño por WhatsApp de algo que no pidió (inventario bajo). Usa el
+ * mismo `metaSend` que el resto del sistema, resolviendo el phone_number_id
+ * desde `channels` — si el canal o el owner_phone no están configurados
+ * todavía para este cliente, se registra y no se rompe nada más (el pedido
+ * ya quedó confirmado de todas formas).
+ */
+async function avisarDueno(clientId, texto) {
+  try {
+    const config = await dbGet('SELECT owner_phone FROM bot_configs WHERE client_id = ?', [clientId]);
+    const canal = await dbGet(
+      `SELECT external_account_id FROM channels WHERE client_id = ? AND channel_type = 'whatsapp' AND status = 'active'`,
+      [clientId]
+    );
+    if (!config?.owner_phone || !canal?.external_account_id) {
+      logger.warn('No se pudo avisar al dueño — falta owner_phone o canal de WhatsApp configurado', { clientId });
+      return;
+    }
+    await metaSend.sendText({
+      channelType: 'whatsapp',
+      to: config.owner_phone,
+      text: texto,
+      phoneNumberId: canal.external_account_id
+    });
+  } catch (error) {
+    logger.warn('Fallo avisando al dueño por WhatsApp', { clientId, error: error.message });
+  }
+}
+
 // POST /api/orders/:id/confirm — aceptar una orden que armó la IA
 router.post('/:id/confirm', verifyToken, async (req, res, next) => {
   try {
@@ -242,6 +274,21 @@ router.post('/:id/confirm', verifyToken, async (req, res, next) => {
 
     logger.info('Orden de la IA confirmada por una persona', { orderId: order.id, userId: req.user?.id });
     res.json({ success: true, data: updated });
+
+    // Inventario en tiempo real (Premium): se descuenta acá, cuando la
+    // orden ya es real, no cuando la IA solo creyó entenderla. Va después de
+    // responder y en su propio try/catch — la confirmación ya se procesó y
+    // no debe caerse porque falle esto.
+    try {
+      const plan = await planService.getPlanActivo(order.client_id);
+      if (plan?.name === 'Premium') {
+        const cruzaronUmbral = await inventoryService.descontarPorOrden(order.client_id, updated);
+        const aviso = inventoryService.avisoBajoStock(cruzaronUmbral);
+        if (aviso) await avisarDueno(order.client_id, aviso);
+      }
+    } catch (invError) {
+      logger.warn('Fallo actualizando inventario al confirmar orden', { orderId: order.id, error: invError.message });
+    }
   } catch (error) {
     next(error);
   }
