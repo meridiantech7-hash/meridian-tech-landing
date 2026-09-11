@@ -11,6 +11,8 @@ const planService = require('../services/planService');
 const reportService = require('../services/reportService');
 const inventoryService = require('../services/inventoryService');
 const costService = require('../services/costService');
+const reservaService = require('../services/reservaService');
+const audioService = require('../services/audioService');
 const logger = require('../utils/logger');
 
 const router = express.Router();
@@ -467,12 +469,25 @@ async function processMessage(clientId, msg) {
 
     // Se despacha ANTES de dar por buena la respuesta, para que el estado real
     // de entrega quede guardado junto al mensaje y visible en la bandeja.
-    const envio = await metaSend.sendText({
-      channelType: msg.channel_type,
-      to: msg.end_customer_id,
-      text: parte,
-      phoneNumberId: msg.phone_number_id
-    });
+    // Los mensajes cortos de cortesía van en la voz de Valeria (menos de 10 s,
+    // sin cifras ni enlaces: eso siempre va escrito). Si la nota de voz falla,
+    // sale el texto: el cliente nunca se queda sin respuesta por el audio.
+    let envio = null;
+    if (msg.channel_type === 'whatsapp' && audioService.estaConfigurado() && audioService.esCandidatoAVoz(parte)) {
+      const voz = await audioService.enviarNotaDeVoz({
+        to: msg.end_customer_id, texto: parte,
+        phoneNumberId: msg.phone_number_id, clientId
+      });
+      if (voz.sent) envio = { sent: true, externalId: voz.externalId };
+    }
+    if (!envio) {
+      envio = await metaSend.sendText({
+        channelType: msg.channel_type,
+        to: msg.end_customer_id,
+        text: parte,
+        phoneNumberId: msg.phone_number_id
+      });
+    }
 
     const guardado = await dbRun(
       'INSERT INTO messages (conversation_id, sender_type, content, external_message_id) VALUES (?, ?, ?, ?)',
@@ -519,6 +534,60 @@ async function processMessage(clientId, msg) {
   // Va al final y sin await del cliente final a propósito: si esto falla o
   // tarda, el cliente ya recibió su respuesta.
   await syncOrderFromConversation(clientId, conversation, history, incoming, msg);
+
+  // Reservas, citas y demos: si en la conversación quedó un día y una hora,
+  // se crea la reserva 'pendiente' y aparece en la tablet. Va con la respuesta
+  // del bot incluida, porque muchas veces la hora la propone Valeria y el
+  // cliente solo dice "sí, perfecto".
+  await reservaService.sincronizarReserva(
+    clientId, conversation, [...history, { sender_type: 'bot', content: reply }], '', msg.channel_type
+  );
+
+  // Diferido: Valeria no lo aprueba, lo consulta. Cuando lo dice, se avisa a
+  // Miguel y a Juan por WhatsApp con los datos del cliente.
+  if (/consult\w* con el equipo/i.test(reply || '')) {
+    await avisarAprobadores(conversation, msg).catch(() => {});
+  }
+}
+
+/**
+ * Avisa a Miguel y a Juan que un cliente pidió el diferido. Una sola vez cada
+ * 12 horas por conversación: si el cliente insiste tres veces, tres avisos
+ * iguales solo tapan el WhatsApp del dueño.
+ *
+ * Límite de WhatsApp: un mensaje que inicia el negocio solo llega si esa
+ * persona le escribió al número en las últimas 24 horas. Si falla por eso
+ * (error 131047), el aviso igual queda en la bandeja de la tablet.
+ */
+const APROBADORES = (process.env.APROBADORES_DESCUENTO || '573155692272,573243940189')
+  .split(',').map((n) => n.trim()).filter(Boolean);
+
+async function avisarAprobadores(conversation, msg) {
+  const reciente = await dbGet(
+    `SELECT id FROM activity_logs WHERE action = 'descuento_consulta' AND entity = ?
+       AND created_at > datetime('now', '-12 hours') LIMIT 1`,
+    [`conversation:${conversation.id}`]
+  );
+  if (reciente) return;
+
+  const quien = conversation.end_customer_name || conversation.end_customer_id;
+  const texto = `🔔 Valeria pide aprobación de un diferido
+
+Cliente: ${quien} (${conversation.end_customer_id})
+Lo último que escribió: "${String(msg.text || '').slice(0, 160)}"
+
+Aprobarlo es decisión de ustedes: mínimo 75% de la implementación de entrada. Respóndanle desde la tablet, en la conversación #${conversation.id}.`;
+
+  for (const numero of APROBADORES) {
+    await metaSend.sendText({ channelType: 'whatsapp', to: numero, text: texto, phoneNumberId: msg.phone_number_id });
+  }
+
+  await dbRun(
+    "INSERT INTO activity_logs (client_id, action, entity, description) VALUES (?, 'descuento_consulta', ?, ?)",
+    [conversation.client_id, `conversation:${conversation.id}`, `Aviso a ${APROBADORES.length} aprobadores`]
+  );
+  emitToClient(conversation.client_id, 'conversation:discount_requested', { conversationId: conversation.id });
+  logger.info('Aviso de diferido enviado a los aprobadores', { conversationId: conversation.id });
 }
 
 /**

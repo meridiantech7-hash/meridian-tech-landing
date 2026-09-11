@@ -1315,6 +1315,17 @@
       pitido();
       setTimeout(pitido, 320);
     });
+    // Reservas que agenda el bot desde el chat: aparecen solas, sin recargar.
+    // Antes la tablet no escuchaba este evento, así que una reserva nueva solo
+    // se veía si alguien entraba a la pestaña y la recargaba.
+    socket.on('reservation:new', function(r){
+      var dia = diaReserva(r.scheduled_at);
+      avisar('Nueva reserva' + (r.customer_name ? ' de ' + r.customer_name : '') +
+        (dia ? ' para ' + dia : ' para hoy') + (r.status === 'pendiente' ? ' — revísala' : ''));
+      pitido();
+      cargarReservas();
+    });
+    socket.on('reservation:updated', function(){ cargarReservas(); });
     socket.on('order:updated', function(o){
       var i = ordenes.findIndex(function(x){ return x.id === o.id; });
       if (i >= 0) ordenes[i] = o; else ordenes.unshift(o);

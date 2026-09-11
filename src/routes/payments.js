@@ -4,6 +4,7 @@ const { verifyToken, exigirAccesoACliente, clienteForzado } = require('../middle
 const { dbGet, dbAll, dbRun } = require('../config/database');
 const boldService = require('../services/boldService');
 const metaSend = require('../services/metaSend');
+const audioService = require('../services/audioService');
 const { emitToClient } = require('./conversations');
 const logger = require('../utils/logger');
 
@@ -61,6 +62,17 @@ async function confirmarPagoAlCliente(transaction, plan) {
       text: texto
     });
     await registrarMensajeBot(conversacion, texto, envio.externalId, envio.sent);
+
+    // La confirmación de pago también va en la voz de Valeria. Sin el monto: el
+    // número queda escrito en el texto de arriba, y dictado no sirve de nada.
+    // Si el audio falla no pasa nada — el texto ya salió.
+    if (audioService.estaConfigurado() && conversacion.channel_type === 'whatsapp') {
+      audioService.enviarNotaDeVoz({
+        to: conversacion.end_customer_id,
+        texto: '¡Listo! Ya recibimos tu pago y quedaste activo. En las próximas horas te contactamos para dejarte todo instalado. ¡Gracias por confiar en nosotros!',
+        clientId: conversacion.client_id
+      }).catch(() => {});
+    }
 
     // El dueño necesita saber que entró plata y que hay que instalar
     emitToClient(conversacion.client_id, 'payment:completed', {

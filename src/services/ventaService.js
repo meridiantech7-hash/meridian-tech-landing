@@ -297,6 +297,7 @@ const generarCobro = async (conversacion) => {
 };
 
 module.exports = {
+  datosDeTransferencia,
   pidePagar,
   generarCobro,
   detectarPlanAcordado,

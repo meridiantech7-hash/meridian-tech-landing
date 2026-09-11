@@ -66,7 +66,10 @@ const migrations = [
   // A los cuántos minutos un pedido pagado y sin entregar se pone en alarma.
   // Va por cliente porque no es lo mismo un asadero que una pizzería: cada
   // negocio sabe cuánto es "demasiado" en su cocina.
-  "ALTER TABLE bot_configs ADD COLUMN alerta_pedido_minutos INTEGER DEFAULT 15"
+  "ALTER TABLE bot_configs ADD COLUMN alerta_pedido_minutos INTEGER DEFAULT 15",
+  // Si el negocio agenda (mesas, citas, demos). Igual que takes_orders: el
+  // que no agenda no paga la llamada de extracción de reservas.
+  "ALTER TABLE bot_configs ADD COLUMN takes_reservations INTEGER DEFAULT 1"
 ];
 
 async function runMigrations() {

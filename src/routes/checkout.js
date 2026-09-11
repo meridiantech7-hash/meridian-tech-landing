@@ -3,6 +3,7 @@ const QRCode = require('qrcode');
 const rateLimit = require('express-rate-limit');
 const { dbGet, dbRun } = require('../config/database');
 const boldService = require('../services/boldService');
+const { datosDeTransferencia } = require('../services/ventaService');
 const logger = require('../utils/logger');
 
 const router = express.Router();
@@ -209,6 +210,35 @@ router.post('/plan/:planId', limitePago, async (req, res, next) => {
       description: descripcion,
       callbackUrl: `${APP_URL}/pagar/${orderId}`
     });
+
+    // Si Bold no da el link, se cobra por transferencia igual que por WhatsApp.
+    // Antes esta página devolvía "pago no disponible": un cliente que ya había
+    // decidido comprar se quedaba sin forma de pagar desde la web.
+    const transferencia = !link.ok ? datosDeTransferencia() : null;
+    if (!link.ok && transferencia) {
+      await dbRun(
+        `INSERT INTO transactions
+          (client_id, plan_id, amount, currency, status, bold_transaction_id, description, payment_method)
+         VALUES (?, ?, ?, ?, 'pending', ?, ?, 'transferencia')`,
+        [cliente.id, plan.id, plan.price, plan.currency || 'COP', orderId, descripcion]
+      );
+      logger.info('Cobro web por transferencia (Bold no disponible)', { orderId, clientId: cliente.id, plan: plan.name });
+
+      const monto = '$' + Number(plan.price).toLocaleString('es-CO');
+      const aviso = encodeURIComponent(
+        `Hola, ya transferí el plan ${plan.name} (${monto}). Referencia ${orderId}. Te envío el comprobante.`
+      );
+      return res.status(200).send(paginaSimple(
+        'Pagar por transferencia — MeridianTech', 'ok', 'Casi listo',
+        `<h1>Plan ${esc(plan.name)} · ${esc(monto)} COP / mes</h1>
+         <p style="color:#C9CDD8">Transfiere a esta llave desde tu banco o billetera:</p>
+         <p style="font-size:1.6rem;font-weight:700;letter-spacing:.02em;margin:6px 0 2px">${esc(transferencia.llave)}</p>
+         <p style="color:#C9CDD8;margin-top:0">${esc(transferencia.titular)} · NIT ${esc(transferencia.nit)}${transferencia.banco ? ' · ' + esc(transferencia.banco) : ''}</p>
+         <p style="color:#C9CDD8">Referencia de tu compra: <b>${esc(orderId)}</b></p>
+         <p style="color:#C9CDD8">Cuando transfieras, mándanos el comprobante por WhatsApp y activamos tu plan.</p>
+         <p><a class="btn" href="https://wa.me/573142162323?text=${aviso}">Enviar comprobante por WhatsApp</a></p>`
+      ));
+    }
 
     if (!link.ok) {
       logger.error('No se pudo crear el link de pago desde la web', { orderId, motivo: link.motivo });
