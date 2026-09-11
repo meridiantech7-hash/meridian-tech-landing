@@ -7,6 +7,13 @@ const logger = require('../utils/logger');
 
 const router = express.Router();
 
+// Con el flujo de mensajes en n8n, la agenda se lee de Supabase (ver
+// reservationsSupabase.js). Con FLUJO_EN_N8N apagado sigue todo como antes.
+const supabaseApp = require('../services/supabaseApp');
+router.use((req, res, next) => (supabaseApp.activo()
+  ? require('./reservationsSupabase')(req, res, next)
+  : next()));
+
 /**
  * Reservas / citas / programaciones del negocio — la agenda que ve la tablet.
  *

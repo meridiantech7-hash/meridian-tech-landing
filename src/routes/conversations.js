@@ -28,6 +28,13 @@ const emitToClient = (clientId, event, payload) => {
   if (io) io.to(`client:${clientId}`).emit(event, payload);
 };
 
+// Con el flujo de mensajes en n8n, la bandeja se lee de Supabase (ver
+// conversationsSupabase.js). Con FLUJO_EN_N8N apagado sigue todo como antes.
+const supabaseApp = require('../services/supabaseApp');
+router.use((req, res, next) => (supabaseApp.activo()
+  ? require('./conversationsSupabase')(req, res, next)
+  : next()));
+
 // GET /api/conversations?client_id=1 - Bandeja en vivo de un negocio
 router.get('/', verifyToken, async (req, res, next) => {
   try {

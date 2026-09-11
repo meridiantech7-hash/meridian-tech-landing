@@ -1011,6 +1011,11 @@ router.post('/', async (req, res) => {
       await callService.manejarEventos(clientId, valor);
     }
 
+    // Con el flujo en n8n, Railway ya no responde mensajes: n8n los atiende y
+    // aquí solo llegan, reenviados por n8n, los eventos de llamadas. Apagar
+    // FLUJO_EN_N8N devuelve la atención a este código en un minuto.
+    if (process.env.FLUJO_EN_N8N === 'true') return;
+
     for (const msg of messages) {
       if (!msg.end_customer_id) continue;
       if (yaVisto(msg.external_message_id)) {

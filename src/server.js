@@ -34,6 +34,8 @@ const io = new SocketIOServer(httpServer, {
   cors: { origin: process.env.CORS_ORIGIN || '*' }
 });
 setIO(io);
+// Con el flujo en n8n, avisa a la tablet de lo nuevo que aparece en Supabase.
+require('./services/supabaseEnVivo').iniciar();
 const PORT = process.env.PORT || 8080;
 
 // Railway sirve detrás de su proxy, así que la IP real del cliente llega en
