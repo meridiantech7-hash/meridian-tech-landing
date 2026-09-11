@@ -139,11 +139,34 @@ const llamarGemini = async (url, payload, timeout = 20000) => {
  * Palabras/frases por defecto que siempre disparan derivación a humano,
  * además de las que cada cliente configure en bot_configs.handoff_keywords.
  */
+//
+// Solo frases INEQUÍVOCAS. Antes estaban sueltas "asesor", "humano",
+// "cancelar" o "una persona real", y en producción callaban al bot en medio
+// de una venta: "¿eres humana?" o "¿me cancela el pedido?" no son pedidos de
+// hablar con alguien, y la conversación quedaba muda para siempre.
 const DEFAULT_HANDOFF_KEYWORDS = [
-  'hablar con una persona', 'hablar con alguien', 'asesor', 'humano',
-  'quiero hablar con', 'una persona real', 'no eres una persona',
-  'reclamo', 'queja', 'cancelar', 'demanda', 'abogado'
+  'hablar con una persona', 'hablar con alguien del equipo', 'hablar con un asesor',
+  'pásame con', 'pasame con', 'comunícame con', 'comunicame con',
+  'quiero poner una queja', 'quiero poner un reclamo', 'demanda', 'abogado'
 ];
+
+/**
+ * Condiciones maestras de conversación, para TODOS los negocios, encima del
+ * guion de cada uno. Nacen de las fallas vistas en producción: el agente
+ * repetía la misma idea, volvía a saludar, reiniciaba el discurso de venta y
+ * no contestaba lo que el cliente acababa de preguntar.
+ */
+const CONDICIONES_MAESTRAS = `CONDICIONES MAESTRAS DE CONVERSACIÓN (están por encima de todo lo demás)
+1. Contesta primero, y de forma directa, lo que el cliente dijo en su ÚLTIMO mensaje. Si hizo dos preguntas, responde las dos.
+2. Lee todo el historial antes de escribir. Nunca repitas una frase, una idea, una pregunta o un dato que ya dijiste en esta conversación. Si necesitas retomar algo, dilo con otras palabras y en una sola línea.
+3. Nunca vuelvas a preguntar algo que el cliente ya respondió o que está en la memoria.
+4. Saluda una sola vez en toda la conversación. Si ya hubo mensajes, entra directo al tema.
+5. Avanza siempre un paso: cada respuesta debe aportar algo nuevo (un dato, una solución, una propuesta concreta). Nunca reinicies la presentación.
+6. Si el cliente responde corto ("ok", "listo", "gracias", "ya"), confirma en una línea y propón el siguiente paso sin repetir lo anterior.
+7. Si no entiendes el mensaje, pide una aclaración concreta en una línea. No adivines ni cambies de tema.
+8. Si el cliente está molesto: primero reconoce su molestia en una frase, luego resuelve. Sin excusas largas.
+9. Máximo dos intentos de cierre por conversación. Si el cliente no quiere, respeta y deja la puerta abierta.
+10. Si el cliente repite su pregunta, es porque tu respuesta no le sirvió: responde distinto, más concreto.`;
 
 const getBotConfig = async (clientId) => {
   const config = await dbGet('SELECT * FROM bot_configs WHERE client_id = ? AND status = ?', [clientId, 'active']);
@@ -184,7 +207,7 @@ const ETIQUETA_MEMORIA = /\n?MEMORIA:\s*(.+?)\s*$/is;
  * recorta antes de despachar el mensaje (ver `extraerMemoria`).
  */
 const buildSystemInstruction = async (config, memoria = {}) => {
-  let instruction = config.system_prompt || '';
+  let instruction = CONDICIONES_MAESTRAS + '\n\n' + (config.system_prompt || '');
 
   // Plan Premium: el bot también actúa como agente de ventas/marketing de
   // cara al cliente final, no solo en los reportes que pide el dueño — ver

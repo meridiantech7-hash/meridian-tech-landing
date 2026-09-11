@@ -140,6 +140,7 @@ const sincronizarReserva = async (clientId, conversation, historial, textoNuevo,
       );
       const actualizada = await dbGet('SELECT * FROM reservations WHERE id = ?', [abierta.id]);
       emitToClient(clientId, 'reservation:updated', actualizada);
+      require('./supabaseSync').reserva(actualizada);
       logger.info('Reserva pendiente actualizada desde el chat', {
         reservationId: abierta.id, conversationId: conversation.id
       });

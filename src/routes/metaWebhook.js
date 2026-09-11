@@ -14,6 +14,7 @@ const costService = require('../services/costService');
 const reservaService = require('../services/reservaService');
 const audioService = require('../services/audioService');
 const callService = require('../services/callService');
+const supabaseSync = require('../services/supabaseSync');
 const logger = require('../utils/logger');
 
 const router = express.Router();
@@ -207,6 +208,7 @@ async function processMessage(clientId, msg) {
     [conversation.id, 'end_customer', shownText, msg.external_message_id || null]
   );
   await dbRun('UPDATE conversations SET last_message_at = CURRENT_TIMESTAMP WHERE id = ?', [conversation.id]);
+  supabaseSync.mensaje(conversation.id, 'end_customer', shownText, msg.external_message_id || null);
 
   emitToClient(clientId, 'conversation:new_message', {
     conversation_id: conversation.id, sender_type: 'end_customer', content: shownText, created_at: new Date().toISOString()
@@ -219,9 +221,24 @@ async function processMessage(clientId, msg) {
   }
 
   // Si el dueño tomó el control, el bot no responde
+  // Excepción: si fue el BOT el que pasó la conversación a una persona y
+  // nadie del equipo escribió en la última hora, Valeria la retoma. Antes una
+  // derivación sin respuesta dejaba al cliente hablándole a la pared para
+  // siempre — eso era "se quedó pegada". Si el dueño la pausó a mano, no se
+  // toca: esa decisión es suya.
   if (conversation.mode !== 'bot') {
-    logger.info('Mensaje recibido con bot inactivo', { conversationId: conversation.id, mode: conversation.mode });
-    return;
+    const retomar = conversation.mode === 'human' && await debeRetomarBot(conversation.id);
+    if (!retomar) {
+      logger.info('Mensaje recibido con bot inactivo', { conversationId: conversation.id, mode: conversation.mode });
+      return;
+    }
+    await dbRun("UPDATE conversations SET mode = 'bot', updated_at = CURRENT_TIMESTAMP WHERE id = ?", [conversation.id]);
+    await dbRun("INSERT INTO handoff_events (conversation_id, trigger_type, detail) VALUES (?, 'auto_resume', ?)",
+      [conversation.id, `Nadie respondió en ${HUMANO_RETOMA_MIN} min; el bot retoma`]);
+    conversation.mode = 'bot';
+    emitToClient(clientId, 'conversation:mode_changed', { conversationId: conversation.id, mode: 'bot', reason: 'sin respuesta del equipo' });
+    supabaseSync.conversacion(conversation.id);
+    logger.info('El bot retoma una conversación derivada sin respuesta', { conversationId: conversation.id });
   }
 
   // Candado de temas restringidos y atajos del dueño — se revisa ANTES que
@@ -330,10 +347,14 @@ async function processMessage(clientId, msg) {
     }
   }
 
-  const history = await dbAll(
-    'SELECT sender_type, content FROM messages WHERE conversation_id = ? ORDER BY created_at ASC LIMIT 20',
+  // Los 20 mensajes MÁS RECIENTES, en orden. Antes era `ASC LIMIT 20`: los
+  // primeros 20 de la conversación. Pasado el mensaje 20, el modelo dejaba de
+  // ver lo que el cliente decía y respondía siempre sobre el comienzo — por eso
+  // repetía y parecía pegado. El último es el mensaje que acaba de entrar.
+  const history = (await dbAll(
+    'SELECT sender_type, content FROM messages WHERE conversation_id = ? ORDER BY created_at DESC, id DESC LIMIT 20',
     [conversation.id]
-  );
+  )).reverse();
 
   // ¿El cliente está pidiendo pagar? Se revisa ANTES de llamar al modelo, por
   // dos razones: no gasta tokens, y sobre todo el mensaje de cobro lo armamos
@@ -413,6 +434,7 @@ async function processMessage(clientId, msg) {
     if (!fueFallaTecnica) {
       await dbRun('UPDATE conversations SET mode = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', ['human', conversation.id]);
       emitToClient(clientId, 'conversation:mode_changed', { conversationId: conversation.id, mode: 'human', reason: handoff });
+      supabaseSync.conversacion(conversation.id);
     } else {
       emitToClient(clientId, 'conversation:ai_failed', {
         conversationId: conversation.id, reason: handoff
@@ -435,6 +457,18 @@ async function processMessage(clientId, msg) {
     const aviso = fueFallaTecnica
       ? 'Disculpa, tuve un problema para procesar tu mensaje. ¿Me lo puedes repetir?'
       : 'Con gusto te comunico con una persona del equipo. En un momento te responden por acá. 🙌';
+
+    // El "¿me lo puedes repetir?" no se manda dos veces en 10 minutos: si
+    // Google sigue caído, repetirlo en cada mensaje es justo la sensación de
+    // bot pegado que se quiere evitar.
+    if (fueFallaTecnica) {
+      const yaAvisado = await dbGet(
+        `SELECT id FROM messages WHERE conversation_id = ? AND sender_type = 'bot' AND content = ?
+           AND created_at > datetime('now', '-10 minutes') LIMIT 1`,
+        [conversation.id, aviso]
+      );
+      if (yaAvisado) return;
+    }
     const notice = await metaSend.sendText({
       channelType: msg.channel_type,
       to: msg.end_customer_id,
@@ -446,6 +480,7 @@ async function processMessage(clientId, msg) {
         'INSERT INTO messages (conversation_id, sender_type, content, external_message_id) VALUES (?, ?, ?, ?)',
         [conversation.id, 'bot', aviso, notice.externalId || null]
       );
+      supabaseSync.mensaje(conversation.id, 'bot', aviso, notice.externalId || null);
       emitToClient(clientId, 'conversation:new_message', {
         id: noticeMsg.id, conversation_id: conversation.id, sender_type: 'bot',
         content: aviso, created_at: new Date().toISOString()
@@ -458,7 +493,30 @@ async function processMessage(clientId, msg) {
   // otra. El guion le pide a Meri separar el segundo mensaje con una línea en
   // blanco, y acá se despachan de verdad por separado — si llegaran pegados,
   // el tono corto que se le pidió al modelo se perdería en la pantalla.
-  const partes = partirEnMensajes(reply);
+  // Antirrepetición: lo que Valeria ya dijo en los últimos mensajes no se
+  // vuelve a mandar, y el saludo va una sola vez por conversación. Si todo lo
+  // que generó era repetido, se le pide UNA vez algo nuevo; si insiste, mejor
+  // callar que mandar el mismo mensaje otra vez.
+  const previosBot = history.filter((m) => m.sender_type !== 'end_customer').slice(-6).map((m) => m.content);
+  const limpiar = (texto) => (previosBot.length ? quitarSaludoRepetido(texto) || texto : texto);
+  let partes = partirEnMensajes(limpiar(reply)).filter((p) => !yaLoDijo(p, previosBot));
+
+  if (!partes.length) {
+    logger.warn('Respuesta repetida descartada, se pide una nueva', { conversationId: conversation.id });
+    const otra = await geminiService.generateBotResponse(
+      clientId,
+      history.slice(0, -1),
+      { ...incoming, text: `${incoming.text || ''}\n\n[Indicación interna: tu respuesta anterior repetía algo que ya dijiste. Responde algo nuevo y concreto a este mensaje.]` },
+      null,
+      { customerNotes: conversation.customer_notes }
+    );
+    if (otra.reply) partes = partirEnMensajes(limpiar(otra.reply)).filter((p) => !yaLoDijo(p, previosBot));
+    if (!partes.length) {
+      logger.warn('El modelo insistió en repetir; no se envía nada', { conversationId: conversation.id });
+      return;
+    }
+  }
+  const textoFinal = partes.join('\n\n');
   let dispatch = { sent: false };
 
   for (let i = 0; i < partes.length; i++) {
@@ -494,6 +552,7 @@ async function processMessage(clientId, msg) {
       'INSERT INTO messages (conversation_id, sender_type, content, external_message_id) VALUES (?, ?, ?, ?)',
       [conversation.id, 'bot', parte, envio.externalId || null]
     );
+    supabaseSync.mensaje(conversation.id, 'bot', parte, envio.externalId || null);
 
     emitToClient(clientId, 'conversation:new_message', {
       id: guardado.id, conversation_id: conversation.id, sender_type: 'bot', content: parte,
@@ -512,7 +571,7 @@ async function processMessage(clientId, msg) {
     // fue por la ventana de 24h — ahí hace falta que él escriba primero.
     emitToClient(clientId, 'conversation:delivery_failed', {
       conversationId: conversation.id,
-      messageId: botMsg.id,
+      messageId: null,
       reason: dispatch.error?.reason,
       outsideWindow: !!dispatch.error?.outsideWindow
     });
@@ -528,6 +587,7 @@ async function processMessage(clientId, msg) {
   if (memoryNote) {
     const notasActualizadas = geminiService.mergeMemoryNote(conversation.customer_notes, memoryNote);
     await dbRun('UPDATE conversations SET customer_notes = ? WHERE id = ?', [notasActualizadas, conversation.id]);
+    supabaseSync.conversacion(conversation.id);
     logger.info('Memoria del cliente actualizada', { conversationId: conversation.id, nota: memoryNote });
   }
 
@@ -541,12 +601,12 @@ async function processMessage(clientId, msg) {
   // del bot incluida, porque muchas veces la hora la propone Valeria y el
   // cliente solo dice "sí, perfecto".
   await reservaService.sincronizarReserva(
-    clientId, conversation, [...history, { sender_type: 'bot', content: reply }], '', msg.channel_type
+    clientId, conversation, [...history, { sender_type: 'bot', content: textoFinal }], '', msg.channel_type
   );
 
   // Diferido: Valeria no lo aprueba, lo consulta. Cuando lo dice, se avisa a
   // Miguel y a Juan por WhatsApp con los datos del cliente.
-  if (/consult\w* con el equipo/i.test(reply || '')) {
+  if (/consult\w* con el equipo/i.test(textoFinal)) {
     await avisarAprobadores(conversation, msg).catch(() => {});
   }
 }
@@ -601,6 +661,52 @@ Aprobarlo es decisión de ustedes: mínimo 75% de la implementación de entrada.
  * mandarle cuatro mensajes seguidos a alguien parece spam — el resto se junta
  * en el segundo. Y si no hay línea en blanco, se manda uno solo tal cual.
  */
+/** Texto comparable: sin tildes, emojis, signos ni espacios de más. */
+const normalizar = (t) => String(t || '').toLowerCase()
+  .normalize('NFD').replace(/[̀-ͯ]/g, '')
+  .replace(/[^a-z0-9ñ ]/g, ' ').replace(/\s+/g, ' ').trim();
+
+/** ¿Esta parte ya la dijo Valeria hace poco, igual o casi igual? */
+function yaLoDijo(parte, previos) {
+  const n = normalizar(parte);
+  if (n.length < 12) return false; // "listo", "claro que sí" pueden repetirse
+  return previos.some((p) => {
+    const q = normalizar(p);
+    return q === n || (Math.min(q.length, n.length) > 30 && (q.includes(n) || n.includes(q)));
+  });
+}
+
+/** Quita el "¡Hola! Soy Valeria" cuando la conversación ya venía andando. */
+function quitarSaludoRepetido(texto) {
+  return String(texto || '')
+    .replace(/^\s*¡?\s*hola\s*!?\s*,?\s*soy valeria(\s*,?\s*(del equipo\s+)?de meridiantech)?[^\p{L}\p{N}\n¿¡]*/iu, '')
+    .trim();
+}
+
+/**
+ * Una derivación que hizo el bot (no el dueño) y que nadie atendió en
+ * HUMANO_RETOMA_MIN minutos se le devuelve a Valeria.
+ */
+const HUMANO_RETOMA_MIN = Number(process.env.HUMANO_RETOMA_MIN || 60);
+
+async function debeRetomarBot(conversationId) {
+  const ultimo = await dbGet(
+    'SELECT trigger_type, created_at FROM handoff_events WHERE conversation_id = ? ORDER BY id DESC LIMIT 1',
+    [conversationId]
+  );
+  if (!ultimo || ultimo.trigger_type !== 'auto') return false;
+  const vencida = await dbGet(
+    "SELECT 1 AS si WHERE datetime(?) < datetime('now', ?)",
+    [ultimo.created_at, `-${HUMANO_RETOMA_MIN} minutes`]
+  );
+  if (!vencida) return false;
+  const atendio = await dbGet(
+    "SELECT id FROM messages WHERE conversation_id = ? AND sender_type = 'owner' AND created_at > ? LIMIT 1",
+    [conversationId, ultimo.created_at]
+  );
+  return !atendio;
+}
+
 function partirEnMensajes(texto) {
   const partes = String(texto || '')
     .split(/\n\s*\n+/)
@@ -629,6 +735,7 @@ async function responderDirecto(clientId, conversation, msg, texto) {
     'INSERT INTO messages (conversation_id, sender_type, content, external_message_id) VALUES (?, ?, ?, ?)',
     [conversation.id, 'bot', texto, envio.externalId || null]
   );
+  supabaseSync.mensaje(conversation.id, 'bot', texto, envio.externalId || null);
   await dbRun('UPDATE conversations SET last_message_at = CURRENT_TIMESTAMP WHERE id = ?', [conversation.id]);
 
   emitToClient(clientId, 'conversation:new_message', {
@@ -683,6 +790,7 @@ async function enviarCobro(clientId, conversation, msg) {
     'INSERT INTO messages (conversation_id, sender_type, content, external_message_id) VALUES (?, ?, ?, ?)',
     [conversation.id, 'bot', texto, envio.externalId || null]
   );
+  supabaseSync.mensaje(conversation.id, 'bot', texto, envio.externalId || null);
   await dbRun('UPDATE conversations SET last_message_at = CURRENT_TIMESTAMP WHERE id = ?', [conversation.id]);
 
   emitToClient(clientId, 'conversation:new_message', {
@@ -782,6 +890,82 @@ async function syncOrderFromConversation(clientId, conversation, history, incomi
   }
 }
 
+// ── Cola por cliente: sin duplicados y una respuesta por ráfaga ─────────────
+//
+// Dos causas de "Valeria repite":
+//  1. Meta REENVÍA el mismo mensaje si no le confirmamos a tiempo, y cada
+//     reenvío se contestaba otra vez. Se descarta todo id ya visto.
+//  2. La gente escribe en ráfaga ("hola" / "quería saber" / "cuánto vale") y
+//     cada mensaje disparaba su propia respuesta, en paralelo y cruzadas. Se
+//     espera un momento, se juntan los textos y se contesta una vez; y los
+//     mensajes de una misma persona se procesan de a uno, nunca a la vez.
+const vistos = new Map();
+const yaVisto = (id) => {
+  if (!id) return false;
+  const ahora = Date.now();
+  for (const [k, t] of vistos) if (ahora - t > 60 * 60 * 1000) vistos.delete(k);
+  if (vistos.has(id)) return true;
+  vistos.set(id, ahora);
+  return false;
+};
+
+const ESPERA_RAFAGA_MS = Number(process.env.AGRUPAR_MENSAJES_MS || 2500);
+const colas = new Map();
+
+const unirTextos = (lista) => (lista.length === 1 ? lista[0] : {
+  ...lista[lista.length - 1],
+  text: lista.map((m) => m.text).filter(Boolean).join('\n')
+});
+
+async function procesarLote(clientId, lote) {
+  const nuevos = [];
+  for (const m of lote) {
+    if (m.external_message_id) {
+      const existe = await dbGet('SELECT id FROM messages WHERE external_message_id = ?', [m.external_message_id]);
+      if (existe) continue;
+    }
+    nuevos.push(m);
+  }
+
+  // Los textos seguidos se juntan; un audio o una imagen van por separado
+  // porque el modelo tiene que oírlos o verlos.
+  const grupos = [];
+  let textos = [];
+  for (const m of nuevos) {
+    if (m.mediaType) {
+      if (textos.length) grupos.push(unirTextos(textos));
+      textos = [];
+      grupos.push(m);
+    } else {
+      textos.push(m);
+    }
+  }
+  if (textos.length) grupos.push(unirTextos(textos));
+
+  for (const g of grupos) await processMessage(clientId, g);
+}
+
+function encolar(clientId, msg) {
+  const clave = `${clientId}:${msg.channel_type}:${msg.end_customer_id}`;
+  let cola = colas.get(clave);
+  if (!cola) {
+    cola = { pendientes: [], reloj: null, cadena: Promise.resolve() };
+    colas.set(clave, cola);
+  }
+  cola.pendientes.push(msg);
+  clearTimeout(cola.reloj);
+  cola.reloj = setTimeout(() => {
+    cola.reloj = null;
+    const lote = cola.pendientes.splice(0);
+    cola.cadena = cola.cadena
+      .then(() => procesarLote(clientId, lote))
+      .catch((error) => logger.error('Error procesando mensajes de Meta', { error: error.message, stack: error.stack }))
+      .finally(() => {
+        if (!cola.pendientes.length && !cola.reloj && colas.get(clave) === cola) colas.delete(clave);
+      });
+  }, ESPERA_RAFAGA_MS);
+}
+
 // ── Recepción de eventos (POST) ─────────────────────────────────────────────
 router.post('/', async (req, res) => {
   if (!isValidSignature(req)) {
@@ -829,7 +1013,11 @@ router.post('/', async (req, res) => {
 
     for (const msg of messages) {
       if (!msg.end_customer_id) continue;
-      await processMessage(clientId, msg);
+      if (yaVisto(msg.external_message_id)) {
+        logger.info('Mensaje repetido por Meta, descartado', { id: msg.external_message_id });
+        continue;
+      }
+      encolar(clientId, msg);
     }
   } catch (error) {
     logger.error('Error procesando webhook de Meta', { error: error.message, stack: error.stack });

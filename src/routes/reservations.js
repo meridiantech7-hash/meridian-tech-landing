@@ -136,6 +136,7 @@ async function createReservation(data) {
 
   const reserva = await dbGet('SELECT * FROM reservations WHERE id = ?', [result.id]);
   emitToClient(data.client_id, 'reservation:new', reserva);
+  require('../services/supabaseSync').reserva(reserva);
   logger.info('Reserva creada', { reservationId: reserva.id, origen: data.source });
   return reserva;
 }
@@ -162,6 +163,7 @@ router.patch('/:id', verifyToken, async (req, res, next) => {
 
     const actualizada = await dbGet('SELECT * FROM reservations WHERE id = ?', [reserva.id]);
     emitToClient(reserva.client_id, 'reservation:updated', actualizada);
+    require('../services/supabaseSync').reserva(actualizada);
 
     logger.info('Reserva actualizada', { reservationId: reserva.id, campos: Object.keys(value) });
     res.json({ success: true, data: actualizada });
