@@ -10,6 +10,7 @@ const ownerService = require('../services/ownerService');
 const planService = require('../services/planService');
 const reportService = require('../services/reportService');
 const inventoryService = require('../services/inventoryService');
+const costService = require('../services/costService');
 const logger = require('../utils/logger');
 
 const router = express.Router();
@@ -286,6 +287,15 @@ async function processMessage(clientId, msg) {
       }
       const ajuste = await inventoryService.ajustarInventario(clientId, msg.text);
       await responderDirecto(clientId, conversation, msg, ajuste.mensaje);
+      return;
+    }
+    // Costos y margen: información interna de MERIDIANTECH. Va detrás del
+    // mismo candado del dueño y NUNCA la responde el asistente de ventas — el
+    // guion de Valeria tiene prohibido hablar de esto, y acá se resuelve sin
+    // pasar por el modelo para que no haya forma de que se filtre redactado.
+    if (costService.esConsultaDeCostos(msg.text)) {
+      const resumen = await costService.resumenParaWhatsApp(msg.text);
+      await responderDirecto(clientId, conversation, msg, resumen);
       return;
     }
     if (reportService.esSolicitudDeReporte(msg.text)) {

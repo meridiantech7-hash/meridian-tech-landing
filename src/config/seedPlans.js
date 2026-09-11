@@ -31,7 +31,7 @@ const plans = [
     name: 'Básico',
     description: 'Automatización esencial para empezar a escalar tu operación',
     price: 800000,
-    implementation_price: 1275000,
+    implementation_price: 1200000,
     currency: 'COP',
     billing_cycle: 'monthly',
     features: [
@@ -53,7 +53,7 @@ const plans = [
     name: 'Pro',
     description: 'Automatización avanzada con IA para equipos en crecimiento',
     price: 1200000,
-    implementation_price: 1275000,
+    implementation_price: 1200000,
     currency: 'COP',
     billing_cycle: 'monthly',
     features: [
@@ -77,7 +77,7 @@ const plans = [
     name: 'Premium',
     description: 'Solución integral de automatización e IA a medida, con asesoría de crecimiento',
     price: 2200000,
-    implementation_price: 2705000,
+    implementation_price: 2200000,
     currency: 'COP',
     billing_cycle: 'monthly',
     features: [
