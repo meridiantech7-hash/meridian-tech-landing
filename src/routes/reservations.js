@@ -58,14 +58,25 @@ router.get('/', verifyToken, async (req, res, next) => {
     // negocio. Colombia no tiene horario de verano, así que restar 5 horas fijas
     // antes de comparar la fecha da el día calendario correcto sin depender de
     // en qué zona horaria esté corriendo el servidor.
+    // `rango` decide qué se ve. Existe por un defecto real: la agenda filtraba
+    // SIEMPRE por el día de hoy, así que una reserva tomada hoy para el sábado
+    // no aparecía en ninguna parte de la app — ni el día que se tomó, ni en
+    // ninguna lista. Y una reserva es, por definición, para después.
+    const rango = ['hoy', 'proximas', 'todas'].includes(req.query.rango)
+      ? req.query.rango : 'hoy';
+
     if (fecha) {
       sql += " AND date(scheduled_at, '-5 hours') = date(?)";
       params.push(fecha);
-    } else {
+    } else if (rango === 'proximas') {
+      // De hoy en adelante: lo que todavía puede pasar.
+      sql += " AND date(scheduled_at, '-5 hours') >= date('now', '-5 hours')";
+    } else if (rango === 'hoy') {
       // Agenda del día: incluye lo agendado ayer (o antes) para hoy, y no
       // arrastra reservas viejas que ya pasaron.
       sql += " AND date(scheduled_at, '-5 hours') = date('now', '-5 hours')";
     }
+    // 'todas' no agrega filtro de fecha: sirve para buscar una que se perdió.
 
     sql += " AND status != 'cancelada' ORDER BY scheduled_at ASC LIMIT 200";
     const reservas = await dbAll(sql, params);
