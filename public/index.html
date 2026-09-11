@@ -335,22 +335,32 @@ body.settled .wm-glow,body.settled .hero-b{
 .btn-o{background:transparent;color:var(--txt);border-color:var(--line-2);}
 .btn-o:hover{background:var(--white);border-color:var(--white);color:var(--black);}
 .btn-xl{font-size:clamp(1rem,1.5vw,1.1875rem);padding:19px 34px;}
-.btn-wa{background:var(--green);border-color:var(--green);color:var(--black);}
-.btn-wa:hover{background:var(--white);border-color:var(--white);color:var(--black);}
-
 /* Plan a medida: aparte de los 3 fijos, para quien no encaja en ninguno.
    Fondo con gradiente sutil y borde propio para que se lea como su propio
-   bloque, no como una cuarta tarjeta de plan. */
-.pl-custom{
-  margin-top:28px;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:22px;
-  padding:30px 34px;border:1px solid var(--line-2);border-radius:var(--r-lg);
-  background:linear-gradient(135deg,var(--surf2),var(--surf));
+   bloque, no como una cuarta tarjeta de plan. Misma entrada que las
+   tarjetas de plan (cae desde arriba y enfoca desde el blur) en vez del
+   fade-up genérico de .rv — para que no se sienta más plano que lo que
+   tiene justo encima. */
+.pl-custom.rv{
+  transform:translateY(-18px);filter:blur(10px);
+  transition:opacity .6s ease,transform .8s cubic-bezier(.16,1,.3,1),filter .8s ease;
 }
-.pl-custom-txt{max-width:48ch;}
-.pl-custom-k{font-family:var(--mono);font-size:.6875rem;letter-spacing:.18em;text-transform:uppercase;color:var(--green);margin:0 0 8px;}
-.pl-custom-t{font-size:1.1875rem;font-weight:600;color:var(--txt);margin:0 0 6px;letter-spacing:-.01em;}
-.pl-custom-d{font-size:.9375rem;color:var(--mut-2);margin:0;line-height:1.55;}
-@media (max-width:640px){.pl-custom{flex-direction:column;align-items:flex-start;padding:26px 22px;}}
+.pl-custom.rv.in{filter:blur(0);}
+.pl-custom{
+  margin-top:28px;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:26px;
+  padding:36px 40px;border:1px solid var(--line-2);border-radius:var(--r-lg);
+  background:linear-gradient(135deg,var(--surf2),var(--surf));
+  transition:border-color .3s ease,transform .3s ease,box-shadow .3s ease;
+}
+.pl-custom:hover{
+  border-color:var(--blue);transform:translateY(-3px);
+  box-shadow:0 20px 44px -20px rgba(43,75,255,.35);
+}
+.pl-custom-txt{max-width:50ch;}
+.pl-custom-k{font-family:var(--mono);font-size:.75rem;letter-spacing:.18em;text-transform:uppercase;color:var(--blue-lt);margin:0 0 10px;}
+.pl-custom-t{font-size:clamp(1.375rem,2.3vw,1.75rem);font-weight:700;color:var(--white);margin:0 0 10px;letter-spacing:-.015em;line-height:1.2;}
+.pl-custom-d{font-size:1.0625rem;color:var(--mut-2);margin:0;line-height:1.6;}
+@media (max-width:640px){.pl-custom{flex-direction:column;align-items:flex-start;padding:28px 24px;}}
 
 /* ═══ MARQUESINA ═══ */
 .mq{border-top:1px solid var(--line);border-bottom:1px solid var(--line);overflow:hidden;padding:16px 0;}
@@ -901,7 +911,7 @@ body.settled .wm-glow,body.settled .hero-b{
         <p class="pl-custom-t">¿Ninguno de estos es exactamente lo tuyo?</p>
         <p class="pl-custom-d">Cada negocio tiene su propio cuello de botella. Cuéntanos el tuyo y armamos un plan con el alcance, los canales y el precio que le sirvan a tu operación.</p>
       </div>
-      <a class="btn btn-wa" data-wa href="https://wa.me/573142162323?text=Hola%2C%20Meridian.%20Ninguno%20de%20los%20planes%20publicados%20se%20ajusta%20del%20todo%20a%20lo%20que%20necesito%20%E2%80%94%20quisiera%20un%20plan%20personalizado%20para%20mi%20empresa.%20%C2%BFPodemos%20hablar%3F" target="_blank" rel="noopener noreferrer">Quiero un plan personalizado &rarr;</a>
+      <a class="btn btn-xl" data-wa href="https://wa.me/573142162323?text=Hola%2C%20Meridian.%20Ninguno%20de%20los%20planes%20publicados%20se%20ajusta%20del%20todo%20a%20lo%20que%20necesito%20%E2%80%94%20quisiera%20un%20plan%20personalizado%20para%20mi%20empresa.%20%C2%BFPodemos%20hablar%3F" target="_blank" rel="noopener noreferrer">Quiero un plan personalizado &rarr;</a>
     </div>
   </div>
 </section>
