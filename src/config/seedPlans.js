@@ -76,7 +76,7 @@ const plans = [
   {
     name: 'Premium',
     description: 'Solución integral de automatización e IA a medida, con asesoría de crecimiento',
-    price: 1800000,
+    price: 2200000,
     implementation_price: 2705000,
     currency: 'COP',
     billing_cycle: 'monthly',
