@@ -1,0 +1,9 @@
+﻿Aquí van las tres imágenes de los planes que Valeria manda por WhatsApp
+cuando el cliente pregunta precios. Nombres exactos:
+
+  basico.png    (BÁSICO - Responde)
+  pro.png       (PRO - Controla)
+  premium.png   (PREMIUM - Crece)
+
+Formato: PNG o JPG, menos de 5 MB, preferible vertical como las tarjetas.
+Al subirlas quedan publicadas en https://meridiantech.app/planes/<archivo>
