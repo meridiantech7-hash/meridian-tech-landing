@@ -19,6 +19,8 @@ const JUAN_PASSWORD = process.env.JUAN_PASSWORD;
 // de reservas — ver ownerService.js. Se deja vacío si no está en el entorno,
 // así ese candado simplemente no se abre para nadie hasta que se configure.
 const OWNER_WHATSAPP_PHONE = process.env.OWNER_WHATSAPP_PHONE || null;
+// Correo de contacto de la empresa: el del dominio.
+const CORREO_EMPRESA = 'contacto@meridiantech.app';
 
 async function seedInternal() {
   // 1. Usuario de Juan
@@ -39,6 +41,11 @@ async function seedInternal() {
   const existingInternal = await dbGet('SELECT id FROM clients WHERE is_internal = 1');
   if (existingInternal) {
     internalClientId = existingInternal.id;
+    // El correo de contacto de la empresa es el del dominio, no el Gmail.
+    await dbRun(
+      "UPDATE clients SET email = ? WHERE id = ? AND email = 'meridiantech7@gmail.com'",
+      [CORREO_EMPRESA, internalClientId]
+    );
     logger.info('✅ Cliente interno MeridianTech ya existe', { clientId: internalClientId });
   } else {
     const result = await dbRun(
@@ -46,7 +53,7 @@ async function seedInternal() {
        VALUES (?, ?, ?, ?, ?, 'active', ?, 1)`,
       [
         'MeridianTech',
-        'meridiantech7@gmail.com',
+        CORREO_EMPRESA,
         'MeridianTech SAS',
         'Medellín',
         'Colombia',
