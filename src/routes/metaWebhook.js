@@ -13,6 +13,7 @@ const inventoryService = require('../services/inventoryService');
 const costService = require('../services/costService');
 const reservaService = require('../services/reservaService');
 const audioService = require('../services/audioService');
+const callService = require('../services/callService');
 const logger = require('../utils/logger');
 
 const router = express.Router();
@@ -806,10 +807,14 @@ router.post('/', async (req, res) => {
     }
 
     const messages = [];
+    // Eventos de llamadas por WhatsApp. Antes este campo se descartaba en
+    // silencio: si alguien llamaba, el sistema ni se enteraba.
+    const llamadas = [];
     (body.entry || []).forEach((entry) => {
       if (body.object === 'whatsapp_business_account') {
         (entry.changes || []).forEach((ch) => {
           if (ch.field === 'messages' && ch.value) messages.push(...parseWhatsApp(ch.value));
+          else if (ch.field === 'calls' && ch.value) llamadas.push(ch.value);
         });
       } else if (body.object === 'instagram') {
         messages.push(...parseMessaging(entry, 'instagram'));
@@ -817,6 +822,10 @@ router.post('/', async (req, res) => {
         messages.push(...parseMessaging(entry, 'messenger'));
       }
     });
+
+    for (const valor of llamadas) {
+      await callService.manejarEventos(clientId, valor);
+    }
 
     for (const msg of messages) {
       if (!msg.end_customer_id) continue;

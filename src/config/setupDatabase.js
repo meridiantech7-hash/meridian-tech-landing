@@ -364,6 +364,26 @@ CREATE TABLE IF NOT EXISTS products (
 );
 
 -- Índices para mejor desempeño
+-- Llamadas por WhatsApp (WhatsApp Business Calling API). Una fila por
+-- llamada: cuando entra (connect) y cómo termina (terminate). raw_offer guarda
+-- la oferta SDP de Meta, necesaria para depurar el puente de audio.
+CREATE TABLE IF NOT EXISTS calls (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  client_id INTEGER NOT NULL,
+  call_id TEXT UNIQUE NOT NULL,
+  direction TEXT,
+  from_number TEXT,
+  from_name TEXT,
+  status TEXT DEFAULT 'sonando',
+  started_at DATETIME,
+  ended_at DATETIME,
+  duration_seconds INTEGER DEFAULT 0,
+  raw_offer TEXT,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_calls_client ON calls(client_id);
+
 CREATE INDEX IF NOT EXISTS idx_orders_client_status ON orders(client_id, status);
 CREATE INDEX IF NOT EXISTS idx_orders_created ON orders(created_at);
 CREATE INDEX IF NOT EXISTS idx_orders_conversation ON orders(conversation_id);
