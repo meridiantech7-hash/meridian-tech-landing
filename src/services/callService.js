@@ -89,6 +89,56 @@ const estadoEnMeta = async () => {
   } catch (error) {
     resultado.numero = { error: error.response?.data?.error?.message || error.message };
   }
+
+  // El límite ahora se calcula por PORTAFOLIO, no por número, y el campo
+  // messaging_limit_tier del número puede quedar desactualizado: después de
+  // la verificación seguía diciendo TIER_250. La documentación de ese nodo da
+  // 404, así que se prueba cada campo candidato por separado — Meta responde
+  // error en los que no existen, y así se sabe cuál es el real.
+  resultado.camposLimite = {};
+  for (const campo of ['whatsapp_business_manager_messaging_limit', 'messaging_limit_tier', 'throughput', 'status', 'name_status', 'platform_type']) {
+    try {
+      const { data } = await axios.get(`${GRAPH}/${PHONE_NUMBER_ID}`, { headers: auth(), params: { fields: campo }, timeout: 10000 });
+      resultado.camposLimite[campo] = data[campo] === undefined ? '(sin valor)' : data[campo];
+    } catch (error) {
+      resultado.camposLimite[campo] = `no existe: ${(error.response?.data?.error?.message || error.message).slice(0, 90)}`;
+    }
+  }
+
+  const WABA_ID = process.env.META_WABA_ID;
+  if (WABA_ID) {
+    try {
+      const { data } = await axios.get(`${GRAPH}/${WABA_ID}`, {
+        headers: auth(),
+        params: { fields: 'id,name,account_review_status,business_verification_status,ownership_type' },
+        timeout: 15000
+      });
+      resultado.cuentaWhatsApp = data;
+    } catch (error) {
+      resultado.cuentaWhatsApp = { error: error.response?.data?.error?.message || error.message };
+    }
+  }
+
+  // Qué campos del webhook tiene suscritos la app. Si 'calls' no está, Meta ni
+  // siquiera avisa cuando alguien llama. Se consulta con el token de la APP
+  // (id|secreto), que es el que exige este endpoint.
+  const APP_ID = process.env.META_APP_ID;
+  const APP_SECRET = (process.env.META_APP_SECRET || '').trim();
+  if (APP_ID && APP_SECRET) {
+    try {
+      const { data } = await axios.get(`${GRAPH}/${APP_ID}/subscriptions`, {
+        params: { access_token: `${APP_ID}|${APP_SECRET}` },
+        timeout: 15000
+      });
+      resultado.webhook = (data.data || []).map((s) => ({
+        objeto: s.object,
+        activo: s.active,
+        campos: (s.fields || []).map((f) => f.name)
+      }));
+    } catch (error) {
+      resultado.webhook = { error: error.response?.data?.error?.message || error.message };
+    }
+  }
   try {
     const { data } = await axios.get(`${GRAPH}/${PHONE_NUMBER_ID}/settings`, { headers: auth(), timeout: 15000 });
     resultado.llamadas = data?.calling || data;
