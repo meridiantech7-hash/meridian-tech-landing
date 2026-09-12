@@ -230,6 +230,10 @@
             que lleguen a esta cuenta entran al mismo flujo que atiende WhatsApp.
           </p>
           <div id="igPerfil" class="muted">Cargando…</div>
+          <div style="margin-top:18px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+            <button class="btn" onclick="conectarInstagram()">Conectar Instagram</button>
+            <span id="igMsg" class="muted"></span>
+          </div>
         </div>
       </div>
       <div class="panel">
@@ -393,7 +397,9 @@ function pintarInstagram(d){
     + '<div style="display:flex;gap:32px;flex-wrap:wrap;margin-top:18px">'
       + dato('Seguidores', d.seguidores)
       + dato('Publicaciones', d.publicaciones)
-    + '</div>';
+      + dato('Token vence', d.expira_en ? String(d.expira_en).slice(0,10) : null)
+    + '</div>'
+    + (d.motivo ? '<p class="muted" style="margin:14px 0 0">'+escapar(d.motivo)+'</p>' : '');
 }
 
 function pintarPaginas(d){
@@ -411,6 +417,20 @@ function pintarPaginas(d){
         + '<td>'+escapar(p.categoria||'—')+'</td>'
         + '<td class="muted">'+escapar(p.id)+'</td></tr>').join('')
     + '</tbody></table>';
+}
+
+// Manda a autorizar la cuenta en Meta. Va en la misma pestaña a propósito:
+// al volver, la persona aterriza dentro del panel y ve el perfil recién
+// conectado, que es justo el recorrido que Meta pide demostrar.
+async function conectarInstagram(){
+  const msg = document.getElementById('igMsg');
+  msg.textContent = 'Abriendo la autorización de Meta…';
+  try {
+    const r = await api('/canales/instagram/autorizar');
+    window.location.href = r.data.url;
+  } catch(e){
+    msg.textContent = 'No se pudo iniciar la autorización. Revisa la configuración del servidor.';
+  }
 }
 
 async function loadCanales(){

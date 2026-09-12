@@ -1,6 +1,7 @@
 const express = require('express');
 const { verifyToken } = require('../middleware/auth');
 const logger = require('../utils/logger');
+const { urlDeAutorizacion, configurado } = require('./instagramOAuth');
 
 /**
  * Estado de los canales de Meta dentro del panel.
@@ -45,7 +46,11 @@ const FACEBOOK = { base: `https://graph.facebook.com/${GRAPH_VERSION}`, token: (
  * profesional", y esa diferencia es justo la que hay que ver al grabar.
  */
 async function graph(destino, ruta, params) {
-  const token = destino.token();
+  return graphConToken(destino, ruta, destino.token(), params);
+}
+
+/** Igual que graph(), pero con el token de una cuenta concreta. */
+async function graphConToken(destino, ruta, token, params) {
   if (!token) return { ok: false, motivo: 'Falta configurar el token de Meta en el servidor' };
 
   const url = new URL(`${destino.base}${ruta}`);
@@ -71,26 +76,68 @@ async function graph(destino, ruta, params) {
   return { ok: true, datos: cuerpo };
 }
 
-// GET /api/canales/instagram - Perfil de la cuenta profesional conectada.
+// GET /api/canales/instagram/autorizar - A dónde mandar a la persona a
+// autorizar su cuenta. La URL se arma en el servidor para que el
+// identificador de la app y los permisos vivan en un solo sitio.
+router.get('/instagram/autorizar', verifyToken, (req, res) => {
+  if (!configurado()) {
+    return res.status(503).json({ error: 'Falta configurar la app de Instagram en el servidor' });
+  }
+  res.json({ success: true, data: { url: urlDeAutorizacion() } });
+});
+
+/**
+ * GET /api/canales/instagram - La cuenta conectada.
+ *
+ * Sale de app.cuentas_meta, no de una constante: cada negocio conecta la suya,
+ * y el panel tiene que mostrar la que esa persona acaba de autorizar. El
+ * perfil se lee en vivo con el token de esa misma cuenta, así que si el token
+ * caducó se nota aquí en vez de fallar callado a la hora de responder.
+ */
 router.get('/instagram', verifyToken, async (req, res, next) => {
   try {
-    // Con el token de la propia cuenta, /me resuelve sola cuál es: así el
-    // panel no depende de que el identificador esté configurado aparte.
-    const id = process.env.META_IG_USER_ID;
-    const r = await graph(INSTAGRAM, id ? `/${id}` : '/me', {
+    if (!sb.activo()) return res.json({ success: true, data: { conectado: false, motivo: 'Almacenamiento no disponible' } });
+
+    const filas = await sb.select('cuentas_meta',
+      'select=cuenta_id,usuario,nombre,foto,expira_en,conectada_en&plataforma=eq.instagram&order=actualizada_en.desc&limit=1');
+    const cuenta = filas && filas[0];
+    if (!cuenta) {
+      return res.json({ success: true, data: { conectado: false, motivo: 'Ninguna cuenta autorizada todavía' } });
+    }
+
+    // El token de ESA cuenta, nunca uno global.
+    let token = null;
+    try {
+      token = await sb.rpc('token_cuenta_meta', { p_plataforma: 'instagram', p_cuenta_id: cuenta.cuenta_id });
+    } catch (error) {
+      logger.warn('No se pudo leer el token de la cuenta', { error: error.message });
+    }
+
+    const base = {
+      conectado: true,
+      id: cuenta.cuenta_id,
+      usuario: cuenta.usuario,
+      nombre: cuenta.nombre,
+      foto: cuenta.foto,
+      conectada_en: cuenta.conectada_en,
+      expira_en: cuenta.expira_en
+    };
+
+    if (!token) return res.json({ success: true, data: { ...base, motivo: 'No se pudo leer el token guardado' } });
+
+    const r = await graphConToken(INSTAGRAM, `/${cuenta.cuenta_id}`, token, {
       fields: 'id,username,name,profile_picture_url,followers_count,media_count'
     });
-    if (!r.ok) return res.json({ success: true, data: { conectado: false, motivo: r.motivo } });
+    if (!r.ok) return res.json({ success: true, data: { ...base, motivo: r.motivo } });
 
     const p = r.datos;
     res.json({
       success: true,
       data: {
-        conectado: true,
-        id: p.id,
-        usuario: p.username,
-        nombre: p.name || null,
-        foto: p.profile_picture_url || null,
+        ...base,
+        usuario: p.username || base.usuario,
+        nombre: p.name || base.nombre,
+        foto: p.profile_picture_url || base.foto,
         seguidores: typeof p.followers_count === 'number' ? p.followers_count : null,
         publicaciones: typeof p.media_count === 'number' ? p.media_count : null
       }

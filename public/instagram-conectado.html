@@ -71,6 +71,16 @@
       return;
     }
 
+    /* El servidor canjea el codigo y redirige aqui con ok=1. Ver un "conectado"
+       apenas llega el codigo seria mentir: el canje todavia podia fallar. */
+    if (p.get('ok') === '1') {
+      var usuario = p.get('usuario');
+      titulo.textContent = usuario ? ('Conectamos @' + usuario) : 'Instagram quedó conectado';
+      mensaje.textContent = 'Los mensajes de esta cuenta ya llegan a Meridian, y las respuestas salen por ella.';
+      detalle.innerHTML = 'Ver la cuenta en <a href="/admin.html">tu panel</a>';
+      return;
+    }
+
     if (!code) {
       /* Alguien entró a mano, sin venir de Meta. */
       senal.textContent = 'i';
@@ -82,7 +92,12 @@
       return;
     }
 
-    detalle.textContent = 'Autorización recibida correctamente.';
+    /* Con code pero sin ok: el servidor no alcanzo a procesarlo. */
+    senal.className = 'senal falla';
+    senal.textContent = '!';
+    titulo.textContent = 'La conexión quedó a medias';
+    mensaje.textContent = 'Meta nos devolvió la autorización, pero no pudimos terminar de registrarla. Inténtalo otra vez desde el panel.';
+    detalle.innerHTML = 'Volver al <a href="/admin.html">panel</a>';
   })();
 </script>
 </body>
