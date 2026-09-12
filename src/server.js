@@ -27,6 +27,7 @@ const { router: reservationsRoutes } = require('./routes/reservations');
 const callsRoutes = require('./routes/calls');
 const flowSettingsRoutes = require('./routes/flowSettings');
 const canalesMetaRoutes = require('./routes/canalesMeta');
+const metaPrivacidadRoutes = require('./routes/metaPrivacidad');
 const checkoutRoutes = require('./routes/checkout');
 const metaWebhookRoutes = require('./routes/metaWebhook');
 
@@ -215,6 +216,8 @@ app.get('/tablet', (req, res) => {
 // ruta inexistente en este servidor devuelve la landing: eso pareceria
 // funcionar sin funcionar. Esta pagina si distingue si la autorizacion salio
 // bien o fallo.
+app.use('/', metaPrivacidadRoutes);
+
 app.get('/instagram/conectado', (req, res) => {
   res.sendFile(path.join(__dirname, '../public/instagram-conectado.html'));
 });
