@@ -208,6 +208,15 @@ app.get('/tablet', (req, res) => {
   res.sendFile(path.join(__dirname, '../public/tablet.html'));
 });
 
+// Retorno de la autorizacion de Instagram. Meta exige una URL de
+// redireccionamiento real para el inicio de sesion de empresa, y cualquier
+// ruta inexistente en este servidor devuelve la landing: eso pareceria
+// funcionar sin funcionar. Esta pagina si distingue si la autorizacion salio
+// bien o fallo.
+app.get('/instagram/conectado', (req, res) => {
+  res.sendFile(path.join(__dirname, '../public/instagram-conectado.html'));
+});
+
 // Página de pago por orden. Va fuera de /api porque es una página que abre una
 // persona en su navegador, y su URL es lo que viaja por WhatsApp: conviene que
 // sea corta y legible (meridiantech.app/pagar/MER-1-2-...).

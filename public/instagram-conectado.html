@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Instagram conectado · MeridianTech</title>
+<style>
+  :root{
+    --fondo:#0b0f14; --tarjeta:#121821; --linea:#1f2a37;
+    --texto:#e8edf3; --suave:#93a4b8; --ok:#2dbe78; --marca:#2d6cff;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; min-height:100vh; display:grid; place-items:center; padding:24px;
+    background:var(--fondo); color:var(--texto);
+    font:16px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  .tarjeta{
+    width:100%; max-width:460px; background:var(--tarjeta);
+    border:1px solid var(--linea); border-radius:16px; padding:32px 28px;
+  }
+  .marca{
+    font-size:13px; font-weight:700; letter-spacing:.14em; text-transform:uppercase;
+    color:var(--suave); margin:0 0 20px;
+  }
+  .senal{
+    width:44px; height:44px; border-radius:50%; display:grid; place-items:center;
+    background:rgba(45,190,120,.14); color:var(--ok); font-size:22px; font-weight:700;
+    margin-bottom:16px;
+  }
+  .senal.falla{background:rgba(255,77,77,.14); color:#ff6b6b}
+  h1{font-size:22px; line-height:1.25; margin:0 0 10px}
+  p{margin:0 0 14px; color:var(--suave)}
+  .detalle{
+    margin-top:18px; padding-top:16px; border-top:1px solid var(--linea);
+    font-size:14px; color:var(--suave);
+  }
+  a{color:var(--marca); font-weight:600}
+</style>
+</head>
+<body>
+  <main class="tarjeta">
+    <p class="marca">MeridianTech</p>
+    <div class="senal" id="senal">✓</div>
+    <h1 id="titulo">Instagram quedó conectado</h1>
+    <p id="mensaje">Ya puedes cerrar esta ventana. Los mensajes de Instagram llegarán a tu panel de Meridian.</p>
+    <div class="detalle" id="detalle"></div>
+  </main>
+
+<script>
+  /* Meta devuelve aquí al terminar la autorización de Instagram. Puede llegar
+     con ?code=... cuando todo salió bien, o con ?error=... cuando la persona
+     canceló o algo falló. Se distinguen los dos casos: una página que diga
+     "conectado" cuando en realidad falló es peor que no tener página. */
+  (function(){
+    var p = new URLSearchParams(location.search);
+    var error = p.get('error') || p.get('error_type');
+    var code = p.get('code');
+    var senal = document.getElementById('senal');
+    var titulo = document.getElementById('titulo');
+    var mensaje = document.getElementById('mensaje');
+    var detalle = document.getElementById('detalle');
+
+    if (error) {
+      senal.className = 'senal falla';
+      senal.textContent = '!';
+      titulo.textContent = 'No se completó la conexión';
+      mensaje.textContent = 'La autorización de Instagram no terminó. Puedes intentarlo otra vez desde el panel.';
+      var razon = p.get('error_description') || p.get('error_reason') || error;
+      detalle.textContent = 'Motivo: ' + razon;
+      return;
+    }
+
+    if (!code) {
+      /* Alguien entró a mano, sin venir de Meta. */
+      senal.textContent = 'i';
+      senal.style.background = 'rgba(45,108,255,.14)';
+      senal.style.color = '#7aa2ff';
+      titulo.textContent = 'Página de conexión con Instagram';
+      mensaje.textContent = 'Esta página se abre sola al terminar de autorizar Instagram. Si llegaste aquí por tu cuenta, no hay nada que hacer.';
+      detalle.innerHTML = 'Volver a <a href="/">meridiantech.app</a>';
+      return;
+    }
+
+    detalle.textContent = 'Autorización recibida correctamente.';
+  })();
+</script>
+</body>
+</html>
