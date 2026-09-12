@@ -159,6 +159,14 @@
     padding:3px 8px;border-radius:5px;background:rgba(76,154,255,.16);color:var(--recibido);white-space:nowrap;
   }
   .reserva .estado.pendiente{background:rgba(245,166,35,.16);color:var(--confirmar)}
+  /* Confirmar es el único gesto que cambia una reserva desde la tablet, así
+     que va como botón propio y no escondido en un menú: el personal lo toca
+     con el pulgar y de una. Solo aparece mientras está pendiente. */
+  .reserva .confirmar{
+    min-height:44px;padding:10px 18px;border-radius:10px;font-weight:800;
+    background:var(--confirmar);color:#1a1206;border:0;white-space:nowrap;
+  }
+  .reserva .confirmar:disabled{opacity:.5}
 
   /* ---------- Chats ---------- */
   .chats{display:flex;width:100%;min-height:0}
@@ -915,6 +923,35 @@
       '</div>'+
       '<span class="estado'+(r.status==='pendiente'?' pendiente':'')+'">'+esc(r.status)+'</span>';
 
+    // Confirmar es el método oficial de confirmación: mientras nadie toque
+    // este botón la reserva sigue pendiente, y así no se da por buena una
+    // reserva que el personal nunca revisó.
+    if (r.status === 'pendiente') {
+      var btn = document.createElement('button');
+      btn.className = 'confirmar';
+      btn.type = 'button';
+      btn.textContent = 'Confirmar';
+      btn.setAttribute('aria-label', 'Confirmar la reserva de ' +
+        (r.customer_name || 'sin nombre') + ' a las ' + horaReserva(r.scheduled_at));
+      btn.addEventListener('click', function(){
+        btn.disabled = true;
+        btn.textContent = 'Confirmando…';
+        api('/reservations/' + r.id, {
+          method: 'PATCH',
+          body: JSON.stringify({ status: 'confirmada' })
+        }).then(function(){
+          avisar('Reserva confirmada — ' + (r.customer_name || 'sin nombre') +
+            ' a las ' + horaReserva(r.scheduled_at));
+          cargarReservas();
+        }).catch(function(e){
+          btn.disabled = false;
+          btn.textContent = 'Confirmar';
+          avisar(e.message);
+        });
+      });
+      el.appendChild(btn);
+    }
+
     return el;
   }
 
@@ -1320,8 +1357,13 @@
     // se veía si alguien entraba a la pestaña y la recargaba.
     socket.on('reservation:new', function(r){
       var dia = diaReserva(r.scheduled_at);
+      // La hora va SIEMPRE en el aviso: sin ella el personal tiene que abrir
+      // la pestaña para saber si la reserva es en diez minutos o en ocho
+      // horas, que es justo lo que hay que decidir al oír el pitido.
       avisar('Nueva reserva' + (r.customer_name ? ' de ' + r.customer_name : '') +
-        (dia ? ' para ' + dia : ' para hoy') + (r.status === 'pendiente' ? ' — revísala' : ''));
+        (dia ? ' para ' + dia : ' para hoy') + ' a las ' + horaReserva(r.scheduled_at) +
+        (r.party_size ? ' · ' + r.party_size + ' personas' : '') +
+        (r.status === 'pendiente' ? ' — confírmala' : ''));
       pitido();
       cargarReservas();
     });
