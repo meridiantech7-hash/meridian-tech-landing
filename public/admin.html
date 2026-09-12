@@ -132,6 +132,7 @@
     <div class="tab" data-tab="plans">Planes</div>
     <div class="tab" data-tab="history">Historial de pagos</div>
     <div class="tab" data-tab="horario">Horario</div>
+    <div class="tab" data-tab="canales">Canales</div>
   </div>
 
   <main>
@@ -215,6 +216,30 @@
             <button class="btn" onclick="guardarHorario()">Guardar horario</button>
             <span id="horarioMsg" class="muted"></span>
           </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- CANALES -->
+    <section id="tab-canales" class="hidden">
+      <div class="panel">
+        <div class="panel-header"><h2>Instagram conectado</h2></div>
+        <div style="padding:16px">
+          <p class="muted" style="margin:0 0 16px">
+            Cuenta profesional de Instagram vinculada a Meridian. Los mensajes
+            que lleguen a esta cuenta entran al mismo flujo que atiende WhatsApp.
+          </p>
+          <div id="igPerfil" class="muted">Cargando…</div>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-header"><h2>Páginas de Facebook</h2></div>
+        <div style="padding:16px">
+          <p class="muted" style="margin:0 0 16px">
+            Páginas a las que Meridian tiene acceso. Messenger atiende los
+            mensajes de la página seleccionada.
+          </p>
+          <div id="fbPaginas" class="muted">Cargando…</div>
         </div>
       </div>
     </section>
@@ -328,8 +353,75 @@ document.querySelectorAll('.tab').forEach(tab=>{
     if(tab.dataset.tab==='plans') loadPlans();
     if(tab.dataset.tab==='history') loadHistory();
     if(tab.dataset.tab==='horario') loadHorario();
+    if(tab.dataset.tab==='canales') loadCanales();
   });
 });
+
+// ===== CANALES DE META =====
+// Muestra el perfil de Instagram y las páginas de Facebook que la app alcanza.
+// No es decorativo: la revisión de la app en Meta exige ver estos datos dentro
+// de nuestra propia interfaz, y de ahí salen dos de los videos de la solicitud.
+function escapar(v){
+  return String(v==null?'':v).replace(/[&<>"']/g, function(c){
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+  });
+}
+
+function pintarInstagram(d){
+  const caja = document.getElementById('igPerfil');
+  if(!d || !d.conectado){
+    caja.innerHTML = '<p style="margin:0">Sin cuenta conectada.'
+      + (d && d.motivo ? ' <span class="muted">('+escapar(d.motivo)+')</span>' : '')
+      + '</p>';
+    return;
+  }
+  const foto = d.foto
+    ? '<img src="'+escapar(d.foto)+'" alt="Foto de perfil de @'+escapar(d.usuario)+'" '
+      + 'style="width:72px;height:72px;border-radius:50%;object-fit:cover;flex:none">'
+    : '';
+  const dato = (etiqueta, valor) => valor==null ? '' :
+    '<div><div class="label">'+etiqueta+'</div><div style="font-weight:600">'+escapar(valor)+'</div></div>';
+  caja.innerHTML =
+    '<div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap">'
+      + foto
+      + '<div style="display:flex;flex-direction:column;gap:2px">'
+        + '<div style="font-size:20px;font-weight:700">@'+escapar(d.usuario)+'</div>'
+        + (d.nombre ? '<div class="muted">'+escapar(d.nombre)+'</div>' : '')
+        + '<div class="muted" style="font-size:13px">ID '+escapar(d.id)+'</div>'
+      + '</div>'
+    + '</div>'
+    + '<div style="display:flex;gap:32px;flex-wrap:wrap;margin-top:18px">'
+      + dato('Seguidores', d.seguidores)
+      + dato('Publicaciones', d.publicaciones)
+    + '</div>';
+}
+
+function pintarPaginas(d){
+  const caja = document.getElementById('fbPaginas');
+  const lista = (d && d.paginas) || [];
+  if(!lista.length){
+    caja.innerHTML = '<p style="margin:0">Ninguna página disponible.'
+      + (d && d.motivo ? ' <span class="muted">('+escapar(d.motivo)+')</span>' : '')
+      + '</p>';
+    return;
+  }
+  caja.innerHTML = '<table><thead><tr><th>Página</th><th>Categoría</th><th>ID</th></tr></thead><tbody>'
+    + lista.map(p =>
+        '<tr><td style="font-weight:600">'+escapar(p.nombre)+'</td>'
+        + '<td>'+escapar(p.categoria||'—')+'</td>'
+        + '<td class="muted">'+escapar(p.id)+'</td></tr>').join('')
+    + '</tbody></table>';
+}
+
+async function loadCanales(){
+  document.getElementById('igPerfil').textContent = 'Cargando…';
+  document.getElementById('fbPaginas').textContent = 'Cargando…';
+  // Por separado: que falle Instagram no debe dejar las páginas en "Cargando…".
+  try { pintarInstagram((await api('/canales/instagram')).data); }
+  catch(e){ document.getElementById('igPerfil').textContent = 'No se pudo consultar Instagram.'; }
+  try { pintarPaginas((await api('/canales/paginas')).data); }
+  catch(e){ document.getElementById('fbPaginas').textContent = 'No se pudieron consultar las páginas.'; }
+}
 
 // ===== HORARIO DE AGENDA =====
 // Valeria responde mensajes a toda hora, pero las visitas, demos e
