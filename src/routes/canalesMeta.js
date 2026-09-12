@@ -23,11 +23,17 @@ const logger = require('../utils/logger');
 const router = express.Router();
 
 const GRAPH_VERSION = process.env.META_GRAPH_VERSION || 'v21.0';
-const GRAPH = `https://graph.facebook.com/${GRAPH_VERSION}`;
 
-// El token de Instagram es distinto del de WhatsApp (los generó Meta en flujos
-// distintos), pero si solo hay uno configurado se usa ese.
-const tokenIG = () => process.env.META_IG_ACCESS_TOKEN || process.env.META_ACCESS_TOKEN || '';
+/**
+ * Dos hosts y dos tokens, y no son intercambiables.
+ *
+ * Un token de Instagram Login (los que empiezan por IGAA) contra
+ * graph.facebook.com responde `190 · Cannot parse access token`: ese host no
+ * sabe leerlos. Va a graph.instagram.com. La lista de páginas, en cambio, es
+ * del lado de Facebook y necesita el token de usuario, no el de Instagram.
+ */
+const INSTAGRAM = { base: `https://graph.instagram.com/${GRAPH_VERSION}`, token: () => process.env.META_IG_ACCESS_TOKEN || '' };
+const FACEBOOK = { base: `https://graph.facebook.com/${GRAPH_VERSION}`, token: () => process.env.META_ACCESS_TOKEN || '' };
 
 /**
  * Llama a Graph y devuelve { ok, datos } o { ok:false, motivo }.
@@ -38,11 +44,11 @@ const tokenIG = () => process.env.META_IG_ACCESS_TOKEN || process.env.META_ACCES
  * distinguir "token vencido" de "falta el permiso" de "la cuenta no es
  * profesional", y esa diferencia es justo la que hay que ver al grabar.
  */
-async function graph(ruta, params) {
-  const token = tokenIG();
+async function graph(destino, ruta, params) {
+  const token = destino.token();
   if (!token) return { ok: false, motivo: 'Falta configurar el token de Meta en el servidor' };
 
-  const url = new URL(`${GRAPH}${ruta}`);
+  const url = new URL(`${destino.base}${ruta}`);
   for (const [k, v] of Object.entries(params || {})) url.searchParams.set(k, v);
   url.searchParams.set('access_token', token);
 
@@ -68,15 +74,10 @@ async function graph(ruta, params) {
 // GET /api/canales/instagram - Perfil de la cuenta profesional conectada.
 router.get('/instagram', verifyToken, async (req, res, next) => {
   try {
+    // Con el token de la propia cuenta, /me resuelve sola cuál es: así el
+    // panel no depende de que el identificador esté configurado aparte.
     const id = process.env.META_IG_USER_ID;
-    if (!id) {
-      return res.json({
-        success: true,
-        data: { conectado: false, motivo: 'Falta configurar la cuenta de Instagram en el servidor' }
-      });
-    }
-
-    const r = await graph(`/${id}`, {
+    const r = await graph(INSTAGRAM, id ? `/${id}` : '/me', {
       fields: 'id,username,name,profile_picture_url,followers_count,media_count'
     });
     if (!r.ok) return res.json({ success: true, data: { conectado: false, motivo: r.motivo } });
@@ -102,7 +103,7 @@ router.get('/instagram', verifyToken, async (req, res, next) => {
 // GET /api/canales/paginas - Páginas de Facebook a las que la app accede.
 router.get('/paginas', verifyToken, async (req, res, next) => {
   try {
-    const r = await graph('/me/accounts', { fields: 'id,name,category' });
+    const r = await graph(FACEBOOK, '/me/accounts', { fields: 'id,name,category' });
     if (!r.ok) return res.json({ success: true, data: { paginas: [], motivo: r.motivo } });
 
     const paginas = (r.datos.data || []).map((p) => ({
