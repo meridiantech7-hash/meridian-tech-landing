@@ -19,7 +19,58 @@ const logger = require('../utils/logger');
 const router = express.Router();
 const emitir = (...args) => require('./conversations').emitToClient(...args);
 
-const ESTADOS = ['por_confirmar', 'recibido', 'preparando', 'listo', 'entregado', 'cancelado'];
+const ESTADOS = ['confirmado', 'preparando', 'listo', 'entregado', 'cancelado'];
+
+// Lo que avanza el tablero, en orden. El personal lo mueve a mano desde la
+// tablet: nadie adivina en que va un pedido.
+const SIGUIENTE = { confirmado: 'preparando', preparando: 'listo', listo: 'entregado' };
+
+// Cada paso avisa al cliente. Los textos los edita el negocio en flow_settings.
+const AVISO = {
+  preparando: 'pedido_texto_preparando',
+  listo: 'pedido_texto_listo',
+  entregado: 'pedido_texto_entregado'
+};
+
+/**
+ * Avisa al cliente por el mismo canal por el que pidio y deja el mensaje en el
+ * historial de la conversacion. Eso ultimo importa: si no queda registrado,
+ * Valeria no sabe que ya se le dijo y puede contradecirse en el siguiente
+ * mensaje.
+ */
+const avisarCliente = async (orden, nuevoEstado) => {
+  const clave = AVISO[nuevoEstado];
+  if (!clave || !orden.customer_phone) return;
+  try {
+    const [ajuste] = await sb.select('flow_settings', `key=eq.${clave}&select=value`);
+    if (!ajuste || !ajuste.value) return;
+    const texto = String(ajuste.value).replace('{numero}', orden.order_number || '');
+
+    const metaSend = require('../services/metaSend');
+    if (!metaSend.isConfigured()) return;
+    await metaSend.sendText({
+      channelType: orden.channel_type || 'whatsapp',
+      to: orden.customer_phone,
+      text: texto
+    });
+
+    if (orden.conversation_id) {
+      await sb.rpc('guardar_saliente', {
+        p_conversation_id: orden.conversation_id,
+        p_remitente: 'bot',
+        p_texto: texto,
+        p_meta_id: null
+      });
+    }
+    logger.info('Aviso de estado enviado', { orderId: orden.id, estado: nuevoEstado });
+  } catch (error) {
+    // Un aviso que falla no puede impedir que la cocina mueva el pedido.
+    logger.warn('No se pudo avisar el cambio de estado', {
+      orderId: orden.id, estado: nuevoEstado,
+      error: error.response?.data?.message || error.message
+    });
+  }
+};
 
 const conClienteApp = async (o) => ({ ...o, client_id: await sb.aClienteApp(o.client_id) });
 
@@ -122,13 +173,15 @@ router.patch('/:id/status', verifyToken, async (req, res, next) => {
     if (!exigirAccesoACliente(req, res, appId)) return;
     if (o.status === value.status) return res.json({ success: true, data: { ...o, client_id: appId } });
 
-    // Una orden sin confirmar no salta al tablero: o se confirma o se cancela.
-    if (o.status === 'por_confirmar' && !['recibido', 'cancelado'].includes(value.status)) {
-      return res.status(409).json({ error: 'Confirma la orden antes de moverla' });
+    // Solo se avanza al paso siguiente, o se cancela. Saltarse la preparacion
+    // dejaria al cliente sin el aviso intermedio.
+    if (value.status !== 'cancelado' && SIGUIENTE[o.status] !== value.status) {
+      return res.status(409).json({
+        error: `Desde "${o.status}" solo se puede pasar a "${SIGUIENTE[o.status] || 'cancelado'}"`
+      });
     }
 
     const cambios = { status: value.status, updated_at: new Date().toISOString() };
-    if (value.status === 'recibido' && !o.paid_at) cambios.paid_at = new Date().toISOString();
 
     const [act] = await sb.actualizar('orders', `id=eq.${o.id}`, cambios);
     const orden = { ...act, client_id: appId };
@@ -136,6 +189,9 @@ router.patch('/:id/status', verifyToken, async (req, res, next) => {
     emitir(appId, 'order:updated', orden);
     logger.info('Orden actualizada', { orderId: o.id, de: o.status, a: value.status });
     res.json({ success: true, data: orden });
+
+    // Despues de responder: la tablet no espera al aviso de WhatsApp.
+    avisarCliente(orden, value.status);
   } catch (error) {
     next(error);
   }

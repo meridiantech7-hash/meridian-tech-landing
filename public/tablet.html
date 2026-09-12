@@ -85,6 +85,18 @@
      brillos: tiene que llamar la atención sin volverse un adorno del que uno
      deja de darse cuenta a los diez minutos. Se respeta a quien pidió menos
      movimiento en el sistema. */
+  /* Entregado y esperando confirmacion: se queda en el color del ambiente.
+     En cocina ya no hay nada que hacer con el, asi que no debe competir por
+     la atencion con lo que si esta pendiente. */
+  .orden.entregada{opacity:.55}
+  .orden.entregada .quien{color:var(--muted)}
+  /* Confirmado por el cliente: verde, y se puede quitar del tablero. */
+  .orden.confirmada{
+    border-left-color:var(--listo)!important;
+    background:rgba(45,190,120,.12);
+  }
+  .orden.confirmada .hace.recibido{color:var(--listo);font-weight:700}
+
   .orden.alarma{
     background:#4a1d1d;border-left-color:#ff4d4d;
     animation:latido-alarma 2.4s ease-in-out infinite;
@@ -646,21 +658,27 @@
 (function(){
   'use strict';
 
+  /* Cuatro columnas, el recorrido real de un pedido. La orden entra ya
+     confirmada: Valeria solo la crea cuando el comprobante cuadra, asi que
+     no hace falta una columna previa para validar lo ya validado. */
   var COLS = [
-    {k:'por_confirmar', t:'Por confirmar', c:'var(--confirmar)'},
-    {k:'recibido',      t:'Recibidos',     c:'var(--recibido)'},
-    {k:'preparando',    t:'Preparando',    c:'var(--preparando)'},
-    {k:'listo',         t:'Listos',        c:'var(--listo)'},
-    {k:'entregado',     t:'Entregados',    c:'var(--cerrado)'}
+    {k:'confirmado', t:'Confirmados', c:'var(--recibido)'},
+    {k:'preparando', t:'En preparación', c:'var(--preparando)'},
+    {k:'listo',      t:'Listos',      c:'var(--listo)'},
+    {k:'entregado',  t:'Entregados',  c:'var(--cerrado)'}
   ];
-  var SIGUIENTE = {recibido:'preparando', preparando:'listo', listo:'entregado'};
+  var SIGUIENTE = {confirmado:'preparando', preparando:'listo', listo:'entregado'};
+  /* Como se llama el boton que mueve al paso siguiente. "preparando" como
+     etiqueta de boton no dice que va a pasar; "Preparar" si. */
+  var BOTON = {preparando:'Preparar', listo:'Marcar listo', entregado:'Entregar'};
+  /* Minutos antes de que un pedido confirmado se ponga en rojo, y segundos que
+     dura en verde el ya confirmado por el cliente. Los define el negocio. */
+  var alarmaMin = 15, verdeSeg = 60;
 
   var token = localStorage.getItem('mt_token');
   var clientId = localStorage.getItem('mt_client');
   var ordenes = [], chats = [], chatActivo = null, mensajes = [], socket = null;
-  // Minutos que un pedido pagado puede esperar antes de la alarma. Lo define
-  // cada negocio en su configuración; 15 mientras no se haya cargado.
-  var alertaMinutos = 15;
+
 
   var $ = function(id){ return document.getElementById(id); };
 
@@ -773,7 +791,7 @@
 
     COLS.forEach(function(col){
       var items = ordenes.filter(function(o){ return o.status === col.k; });
-      if (col.k === 'por_confirmar') porConfirmar = items.length;
+      if (col.k === 'confirmado') porConfirmar = items.filter(estaEnAlarma).length;
 
       var d = document.createElement('div');
       d.className = 'col';
@@ -800,16 +818,26 @@
      El reloj arranca en paid_at a propósito: un pedido sin pagar puede
      esperar, uno pagado que lleva media hora en cola es un cliente molesto. */
   function minutosEsperando(o){
-    if (!o.paid_at) return null;
     if (o.status === 'entregado' || o.status === 'cancelado') return null;
-    var f = aFecha(o.paid_at); if (!f) return null;
-    var t = f.getTime();
-    return Math.floor((Date.now() - t) / 60000);
+    var f = aFecha(o.confirmado_en || o.paid_at || o.created_at); if (!f) return null;
+    return Math.floor((Date.now() - f.getTime()) / 60000);
   }
 
+  /* La alarma solo aplica a la primera columna. Un pedido que ya esta en
+     preparacion no tiene por que ponerse rojo: alguien lo esta atendiendo.
+     Lo que no puede pasar es que uno confirmado se quede en cola sin que
+     nadie lo mire. */
   function estaEnAlarma(o){
+    if (o.status !== 'confirmado') return false;
     var m = minutosEsperando(o);
-    return m !== null && m >= alertaMinutos;
+    return m !== null && m >= alarmaMin;
+  }
+
+  /* Segundos desde que el cliente confirmo que recibio, o null. */
+  function segundosConfirmado(o){
+    if (!o.confirmado_por_cliente) return null;
+    var f = aFecha(o.confirmado_por_cliente); if (!f) return null;
+    return Math.floor((Date.now() - f.getTime()) / 1000);
   }
 
   function tarjeta(o, color){
@@ -824,7 +852,12 @@
 
     var espera = minutosEsperando(o);
     var alarma = estaEnAlarma(o);
+    var confirmado = o.confirmado_por_cliente ? true : false;
     if (alarma) el.className = 'orden alarma';
+    // Entregado y esperando confirmacion: se queda en el color del ambiente,
+    // sin llamar la atencion, porque en cocina ya no hay nada que hacer con el.
+    if (o.status === 'entregado' && !confirmado) el.className = 'orden entregada';
+    if (confirmado) el.className = 'orden confirmada';
     el.dataset.orden = o.id;
 
     el.innerHTML =
@@ -837,10 +870,14 @@
       '<div class="pie"><span class="total">'+pesos(o.total)+'</span>'+
       // Cuando está pagado se muestra la espera desde el pago, que es el dato
       // que importa en la cocina; si no, cuánto lleva desde que entró.
-      '<span class="hace'+(alarma ? ' urgente' : '')+'">'+
-        (espera !== null
-          ? (alarma ? '⏱ ' : '') + espera + ' min esperando'
-          : hace(o.created_at))+
+      '<span class="hace'+(alarma ? ' urgente' : '')+(confirmado ? ' recibido' : '')+'">'+
+        (confirmado
+          ? '✓ recibido por el cliente'
+          : o.status === 'entregado'
+            ? 'en camino · esperando confirmación'
+            : espera !== null
+              ? (alarma ? '⏱ ' : '') + espera + ' min esperando'
+              : hace(o.created_at))+
       '</span></div>';
 
     el.addEventListener('click', function(){ abrirOrden(o); });
@@ -854,11 +891,14 @@
     }).join('') || '<div class="vacio">Sin productos cargados</div>';
 
     var acciones = '';
-    if (o.status === 'por_confirmar') {
-      acciones += '<button class="btn ok" data-acc="confirmar">Confirmar y mandar a cocina</button>';
-    } else if (SIGUIENTE[o.status]) {
-      acciones += '<button class="btn primario" data-acc="avanzar">Marcar como '+
-                  esc(SIGUIENTE[o.status])+'</button>';
+    if (SIGUIENTE[o.status]) {
+      acciones += '<button class="btn primario" data-acc="avanzar">'+
+                  esc(BOTON[SIGUIENTE[o.status]] || SIGUIENTE[o.status])+'</button>';
+    }
+    // Ya confirmado por el cliente: se puede quitar del tablero. Dejarlo ahi
+    // es estorbo visual para cocina.
+    if (o.confirmado_por_cliente) {
+      acciones += '<button class="btn" data-acc="quitar">Quitar del tablero</button>';
     }
     if (o.conversation_id) {
       acciones += '<button class="btn" data-acc="chat">Ver el chat</button>';
@@ -908,6 +948,12 @@
         api('/orders/'+o.id+'/pagado', {method:'POST', body:JSON.stringify({})})
           .then(function(){ avisar('Pago registrado. El reloj de cocina arrancó.'); cerrarPanel(); })
           .catch(function(e){ avisar(e.message); });
+        return;
+      }
+      if (acc === 'quitar') {
+        // Solo sale del tablero; la orden queda en la base con su historia.
+        ordenes = ordenes.filter(function(x){ return x.id !== o.id; });
+        pintarTablero(); cerrarPanel();
         return;
       }
       if (acc === 'confirmar') {
@@ -1032,6 +1078,8 @@
     return api('/flow-settings').then(function(j){
       (j.data || []).forEach(function(a){
         if (a.key === 'reserva_duracion_min') franjaMin = parseInt(a.value, 10) || 60;
+        if (a.key === 'pedido_alarma_min') alarmaMin = parseInt(a.value, 10) || 15;
+        if (a.key === 'pedido_verde_segundos') verdeSeg = parseInt(a.value, 10) || 60;
       });
     }).catch(function(){});
   }
@@ -1544,7 +1592,7 @@
     api('/bot-config/'+clientId).then(function(j){
       $('kbVista').textContent = j.data.knowledge_base || '(todavía sin información del negocio)';
       $('umbral').value = j.data.alerta_pedido_minutos || 15;
-      if (j.data.alerta_pedido_minutos) alertaMinutos = Number(j.data.alerta_pedido_minutos);
+      if (j.data.alerta_pedido_minutos) alarmaMin = Number(j.data.alerta_pedido_minutos);
     }).catch(function(e){ avisar(e.message); });
   }
 
@@ -1597,7 +1645,7 @@
     var b = this; b.disabled = true;
     api('/bot-config/'+clientId, { method:'PUT', body: JSON.stringify({ alerta_pedido_minutos: m }) })
       .then(function(){
-        alertaMinutos = m;
+        alarmaMin = m;
         pintarTablero();
         avisar('Listo. Los pedidos pagados se ponen en rojo a los ' + m + ' minutos.');
       })
@@ -1726,7 +1774,7 @@
   function cargarUmbralAlarma(){
     api('/bot-config/'+clientId).then(function(j){
       var m = j.data && j.data.alerta_pedido_minutos;
-      if (m) alertaMinutos = Number(m);
+      if (m) alarmaMin = Number(m);
     }).catch(function(){});
   }
 
