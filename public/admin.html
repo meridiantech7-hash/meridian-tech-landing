@@ -111,11 +111,27 @@
     </div>
   </header>
 
+  <style>
+    /* Horario: una fila por día, con el nombre siempre en la misma columna
+       para que la vista se lea de un vistazo y no como un formulario. */
+    .horario-fila{
+      display:flex;align-items:center;gap:10px;padding:8px 0;
+      border-bottom:1px solid rgba(128,128,128,.18);flex-wrap:wrap;
+    }
+    .horario-fila:last-child{border-bottom:0}
+    .horario-dia{
+      display:flex;align-items:center;gap:8px;min-width:150px;font-weight:600;
+    }
+    .horario-fila input[type="time"]{padding:6px 8px}
+    .horario-fila input:disabled{opacity:.4}
+  </style>
+
   <div class="tabs">
     <div class="tab active" data-tab="overview">Resumen</div>
     <div class="tab" data-tab="clients">Clientes</div>
     <div class="tab" data-tab="plans">Planes</div>
     <div class="tab" data-tab="history">Historial de pagos</div>
+    <div class="tab" data-tab="horario">Horario</div>
   </div>
 
   <main>
@@ -179,6 +195,30 @@
     </section>
 
     <!-- HISTORY -->
+    <!-- HORARIO -->
+    <section id="tab-horario" class="hidden">
+      <div class="panel">
+        <div class="panel-header"><h2>Horario para agendar</h2></div>
+        <div style="padding:16px">
+          <p class="muted" style="margin:0 0 16px">
+            Valeria responde mensajes a cualquier hora. Este horario manda sobre
+            las visitas, demos, reuniones e instalaciones: fuera de estas horas
+            no agenda, y le ofrece al cliente alternativas que sí queden dentro.
+          </p>
+          <div id="horarioFilas"></div>
+          <label style="display:block;margin:18px 0 6px;font-weight:600">
+            Cómo se lo dice al cliente
+          </label>
+          <input type="text" id="horarioTexto" style="width:100%;max-width:620px"
+                 placeholder="lunes a viernes de 9:00 a.m. a 6:00 p.m. y sábados de 9:00 a.m. a 1:00 p.m.">
+          <div style="margin-top:18px;display:flex;align-items:center;gap:12px">
+            <button class="btn" onclick="guardarHorario()">Guardar horario</button>
+            <span id="horarioMsg" class="muted"></span>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <section id="tab-history" class="hidden">
       <div class="panel">
         <div class="panel-header"><h2>Historial completo de pagos</h2></div>
@@ -287,8 +327,91 @@ document.querySelectorAll('.tab').forEach(tab=>{
     if(tab.dataset.tab==='clients') loadClients();
     if(tab.dataset.tab==='plans') loadPlans();
     if(tab.dataset.tab==='history') loadHistory();
+    if(tab.dataset.tab==='horario') loadHorario();
   });
 });
+
+// ===== HORARIO DE AGENDA =====
+// Valeria responde mensajes a toda hora, pero las visitas, demos e
+// instalaciones solo se agendan dentro de este horario. Cuando no existía en
+// ninguna parte, agendó una visita un domingo a las 9 de la mañana.
+const DIAS = [
+  ['1','Lunes'], ['2','Martes'], ['3','Miércoles'], ['4','Jueves'],
+  ['5','Viernes'], ['6','Sábado'], ['0','Domingo']
+];
+
+async function loadHorario(){
+  const cont = document.getElementById('horarioFilas');
+  cont.innerHTML = '<p class="muted">Cargando…</p>';
+  try{
+    const res = await api('/flow-settings');
+    const ajustes = {};
+    (res.data || []).forEach(a => { ajustes[a.key] = a.value; });
+
+    let horario = {};
+    try{ horario = JSON.parse(ajustes.horario_agenda || '{}'); }catch(e){}
+
+    cont.innerHTML = DIAS.map(([num, nombre])=>{
+      const franja = horario[num];
+      const abierto = Array.isArray(franja);
+      return '<div class="horario-fila" data-dia="'+num+'">'+
+        '<label class="horario-dia">'+
+          '<input type="checkbox" class="h-abierto"'+(abierto?' checked':'')+'> '+nombre+
+        '</label>'+
+        '<input type="time" class="h-desde" value="'+(abierto?franja[0]:'09:00')+'"'+(abierto?'':' disabled')+'>'+
+        '<span class="muted">a</span>'+
+        '<input type="time" class="h-hasta" value="'+(abierto?franja[1]:'18:00')+'"'+(abierto?'':' disabled')+'>'+
+      '</div>';
+    }).join('');
+
+    // El día cerrado deja las horas inertes: así no queda un horario a medias
+    // que parezca activo.
+    cont.querySelectorAll('.horario-fila').forEach(fila=>{
+      const chk = fila.querySelector('.h-abierto');
+      chk.addEventListener('change', ()=>{
+        fila.querySelector('.h-desde').disabled = !chk.checked;
+        fila.querySelector('.h-hasta').disabled = !chk.checked;
+      });
+    });
+
+    document.getElementById('horarioTexto').value = ajustes.horario_texto || '';
+    document.getElementById('horarioMsg').textContent = '';
+  }catch(e){
+    cont.innerHTML = '<p class="muted">No se pudo cargar el horario: '+e.message+'</p>';
+  }
+}
+
+async function guardarHorario(){
+  const msg = document.getElementById('horarioMsg');
+  const horario = {};
+  let invalido = null;
+
+  document.querySelectorAll('#horarioFilas .horario-fila').forEach(fila=>{
+    const dia = fila.dataset.dia;
+    if(!fila.querySelector('.h-abierto').checked){ horario[dia] = null; return; }
+    const desde = fila.querySelector('.h-desde').value;
+    const hasta = fila.querySelector('.h-hasta').value;
+    if(!desde || !hasta) invalido = 'Falta una hora';
+    else if(desde >= hasta) invalido = 'Un día cierra antes de abrir';
+    horario[dia] = [desde, hasta];
+  });
+
+  if(invalido){ msg.textContent = invalido; return; }
+
+  msg.textContent = 'Guardando…';
+  try{
+    await api('/flow-settings', {
+      method:'PUT',
+      body: JSON.stringify({ ajustes: {
+        horario_agenda: JSON.stringify(horario),
+        horario_texto: document.getElementById('horarioTexto').value
+      }})
+    });
+    msg.textContent = 'Horario guardado. Valeria lo aplica desde el próximo mensaje.';
+  }catch(e){
+    msg.textContent = 'No se pudo guardar: '+e.message;
+  }
+}
 
 // ===== OVERVIEW =====
 async function loadOverview(){

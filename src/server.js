@@ -25,6 +25,7 @@ const botConfigRoutes = require('./routes/botConfig');
 const { router: ordersRoutes } = require('./routes/orders');
 const { router: reservationsRoutes } = require('./routes/reservations');
 const callsRoutes = require('./routes/calls');
+const flowSettingsRoutes = require('./routes/flowSettings');
 const checkoutRoutes = require('./routes/checkout');
 const metaWebhookRoutes = require('./routes/metaWebhook');
 
@@ -143,6 +144,7 @@ app.use('/api/bot-config', botConfigRoutes);
 app.use('/api/orders', ordersRoutes);
 app.use('/api/reservations', reservationsRoutes);
 app.use('/api/calls', callsRoutes);
+app.use('/api/flow-settings', flowSettingsRoutes);
 // Webhook único de Meta (WhatsApp + Instagram + Messenger). Sin verifyToken:
 // lo llama Meta, no un admin; se protege con hub.verify_token (GET) y
 // firma HMAC X-Hub-Signature-256 (POST).
