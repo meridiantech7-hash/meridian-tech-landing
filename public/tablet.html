@@ -160,6 +160,39 @@
   }
   .reserva .estado.pendiente{background:rgba(245,166,35,.16);color:var(--confirmar)}
 
+  /* ---------- Reservas: calendario + agenda de hoy ---------- */
+  /* Dos mitades. A la izquierda el mes, a la derecha SIEMPRE el dia de hoy:
+     el personal necesita ver lo de hoy sin buscarlo, y el mes solo para
+     ubicar lo que viene. */
+  .reservas-split{flex:1;display:flex;min-height:0;width:100%}
+  .col-cal{flex:1;min-width:0;display:flex;flex-direction:column;overflow-y:auto}
+  .col-hoy{
+    flex:0 0 46%;max-width:520px;display:flex;flex-direction:column;min-height:0;
+    border-left:1px solid var(--line);background:var(--surface);
+  }
+  .hoy-cab{
+    display:flex;align-items:baseline;gap:10px;padding:14px 16px 10px;
+    border-bottom:1px solid var(--line);
+  }
+  .hoy-titulo{font-size:20px;font-weight:800}
+  .hoy-fecha{color:var(--muted);font-size:14px;text-transform:capitalize}
+  .hoy-lista{flex:1;overflow-y:auto;padding:12px 16px 16px;display:flex;flex-direction:column;gap:10px}
+  /* Entran deslizandose, como los chats: el movimiento avisa que llego algo
+     nuevo sin que nadie tenga que estar mirando. */
+  @keyframes entra-reserva{from{opacity:0;transform:translateX(14px)}to{opacity:1;transform:none}}
+  .hoy-lista .reserva{animation:entra-reserva .22s ease-out both}
+  @media (prefers-reduced-motion: reduce){ .hoy-lista .reserva{animation:none} }
+  .hoy-lista .reserva{flex-direction:column;align-items:stretch;gap:8px}
+  .hoy-lista .reserva .hora{font-size:22px}
+  .hoy-lista .linea{display:flex;align-items:center;gap:8px;font-size:14px;color:var(--muted)}
+  .hoy-lista .linea b{color:var(--text);font-weight:600}
+  .hoy-lista .vacio{color:var(--muted);text-align:center;padding:28px 8px}
+  /* En pantallas angostas se apilan: primero hoy, que es lo urgente. */
+  @media (max-width: 900px){
+    .reservas-split{flex-direction:column-reverse}
+    .col-hoy{flex:0 0 auto;max-width:none;border-left:0;border-bottom:1px solid var(--line);max-height:45%}
+  }
+
   /* ---------- Calendario del mes ---------- */
   /* La agenda en lista no deja ver el mes: para saber si el jueves hay algo
      habia que ir dia por dia. El calendario muestra la carga de un vistazo. */
@@ -187,6 +220,13 @@
   }
   .cal-dia[disabled]{opacity:.25;background:transparent;border-color:transparent}
   .cal-dia.hoy{border-color:var(--confirmar)}
+  /* Un dia con visitas tiene que saltar a la vista sin leer numeros. */
+  .cal-dia.con-reservas{
+    background:rgba(76,154,255,.14);border-color:var(--recibido);color:var(--text);
+  }
+  .cal-dia.con-pendientes{
+    background:rgba(245,166,35,.16);border-color:var(--confirmar);
+  }
   .cal-dia[aria-pressed="true"]{background:var(--surface-2);border-color:var(--muted)}
   .cal-dia .cuenta{
     font-size:11px;font-weight:800;padding:1px 7px;border-radius:999px;
@@ -542,14 +582,17 @@
 
   <!-- ================= RESERVAS ================= -->
   <section class="vista" id="vista-reservas">
-    <div class="agenda-envoltura">
-      <div class="sw-rango" role="group" aria-label="Qué reservas ver">
-        <button class="sw-r" type="button" data-rango="hoy" aria-pressed="true">Hoy</button>
-        <button class="sw-r" type="button" data-rango="proximas" aria-pressed="false">Próximas</button>
-        <button class="sw-r" type="button" data-rango="todas" aria-pressed="false">Todas</button>
-        <button class="sw-r" type="button" data-rango="calendario" aria-pressed="false">Calendario</button>
+    <div class="reservas-split">
+      <div class="col-cal">
+        <div class="agenda" id="agenda"></div>
       </div>
-      <div class="agenda" id="agenda"></div>
+      <aside class="col-hoy" aria-label="Reservas de hoy">
+        <div class="hoy-cab">
+          <span class="hoy-titulo">Hoy</span>
+          <span class="hoy-fecha" id="hoyFecha"></span>
+        </div>
+        <div class="hoy-lista" id="hoyLista"></div>
+      </aside>
     </div>
   </section>
 
@@ -648,7 +691,8 @@
 
   function hace(iso){
     if (!iso) return '';
-    var ms = Date.now() - new Date(iso.replace(' ','T') + (iso.indexOf('Z')<0?'Z':'')).getTime();
+    var d = aFecha(iso); if (!d) return '';
+    var ms = Date.now() - d.getTime();
     var min = Math.floor(ms/60000);
     if (min < 1) return 'ahora';
     if (min < 60) return min + ' min';
@@ -709,7 +753,7 @@
       });
       $('vista-'+t.dataset.vista).classList.add('activa');
       if (t.dataset.vista === 'chats') cargarChats();
-      if (t.dataset.vista === 'reservas') { cargarFranja().then(cargarReservas); }
+      if (t.dataset.vista === 'reservas') { vigilarMedianoche(); cargarFranja().then(cargarReservas); }
       if (t.dataset.vista === 'menu') cargarMenu();
     });
   });
@@ -758,9 +802,8 @@
   function minutosEsperando(o){
     if (!o.paid_at) return null;
     if (o.status === 'entregado' || o.status === 'cancelado') return null;
-    var t = new Date(String(o.paid_at).replace(' ', 'T') +
-      (String(o.paid_at).indexOf('Z') < 0 ? 'Z' : '')).getTime();
-    if (isNaN(t)) return null;
+    var f = aFecha(o.paid_at); if (!f) return null;
+    var t = f.getTime();
     return Math.floor((Date.now() - t) / 60000);
   }
 
@@ -885,7 +928,6 @@
   // ---------------- Reservas ----------------
   // Agenda del día: incluye lo que se agendó desde ayer (o antes) para hoy —
   // el filtro por fecha real de la reserva ya lo hace el backend.
-  var rangoReservas = 'hoy';
 
   // Mes que se esta viendo y dia abierto en el calendario.
   var mesCal = new Date();
@@ -896,13 +938,93 @@
   var franjaMin = 60;
 
   function cargarReservas(){
-    // En calendario se piden todas: el mes no se pinta con solo las de hoy.
-    var rango = rangoReservas === 'calendario' ? 'todas' : rangoReservas;
-    return api('/reservations?client_id='+clientId+'&rango='+rango).then(function(j){
-      var datos = j.data || [];
-      if (rangoReservas === 'calendario') { reservasMes = datos; pintarCalendario(); }
-      else pintarAgenda(datos);
+    // Siempre todas: el mes las necesita completas y la columna de hoy se
+    // filtra en pantalla. Una sola peticion alimenta las dos mitades.
+    return api('/reservations?client_id='+clientId+'&rango=todas').then(function(j){
+      reservasMes = j.data || [];
+      pintarCalendario();
+      pintarHoy();
     }).catch(function(e){ avisar(e.message); });
+  }
+
+  /* La columna derecha es SIEMPRE el dia de hoy. Se recalcula sola al cruzar
+     la medianoche: a las 00:00 el personal tiene que ver la programacion del
+     dia que empieza, sin recargar nada. */
+  var diaMostrado = null;
+  function hoyEnBogota(){
+    return new Intl.DateTimeFormat('en-CA', { timeZone:'America/Bogota' }).format(new Date());
+  }
+  function vigilarMedianoche(){
+    var ahora = hoyEnBogota();
+    if (diaMostrado && diaMostrado !== ahora) {
+      diaMostrado = ahora;
+      mesCal = new Date();
+      diaCal = null;
+      cargarReservas();
+      return;
+    }
+    diaMostrado = ahora;
+  }
+  setInterval(vigilarMedianoche, 60000);
+
+  function correoDe(r){
+    if (r.customer_email) return r.customer_email;
+    // Las reservas viejas guardaban el correo dentro de las notas.
+    var m = String(r.notes || '').match(/[\w.+-]+@[\w-]+\.[\w.]+/);
+    return m ? m[0] : null;
+  }
+
+  function pintarHoy(){
+    var caja = $('hoyLista');
+    if (!caja) return;
+    var hoy = new Date();
+    $('hoyFecha').textContent = hoy.toLocaleDateString('es-CO', {
+      timeZone:'America/Bogota', weekday:'long', day:'numeric', month:'long' });
+
+    var deHoy = reservasMes
+      .filter(function(r){ return mismoDia(r.scheduled_at, hoy) && r.status !== 'cancelada'; })
+      .sort(function(a, b){ return alMomento(a.scheduled_at) - alMomento(b.scheduled_at); });
+
+    caja.innerHTML = '';
+    if (!deHoy.length) {
+      caja.innerHTML = '<div class="vacio">No hay reservas para hoy.</div>';
+      return;
+    }
+
+    deHoy.forEach(function(r){
+      var el = document.createElement('div');
+      el.className = 'reserva' + (r.status === 'pendiente' ? '' : '');
+      var correo = correoDe(r);
+      el.innerHTML =
+        '<div class="hora">'+horaReserva(r.scheduled_at)+'</div>'+
+        '<div class="info">'+
+          '<div class="quien">'+esc(r.customer_name || 'Sin nombre')+'</div>'+
+          (r.customer_phone ? '<div class="linea">Tel <b>'+esc(r.customer_phone)+'</b></div>' : '')+
+          (correo ? '<div class="linea">Correo <b>'+esc(correo)+'</b></div>' : '')+
+          (r.party_size ? '<div class="linea">Personas <b>'+r.party_size+'</b></div>' : '')+
+          (r.notes ? '<div class="linea">'+esc(r.notes)+'</div>' : '')+
+        '</div>'+
+        '<span class="estado'+(r.status==='pendiente'?' pendiente':'')+'">'+esc(r.status)+'</span>';
+
+      if (r.status === 'pendiente') {
+        var btn = document.createElement('button');
+        btn.className = 'confirmar';
+        btn.type = 'button';
+        btn.textContent = 'Confirmar';
+        btn.addEventListener('click', function(){
+          btn.disabled = true; btn.textContent = 'Confirmando…';
+          api('/reservations/' + r.id, { method:'PATCH', body: JSON.stringify({ status:'confirmada' }) })
+            .then(function(){
+              avisar('Reserva confirmada — ' + (r.customer_name || 'sin nombre') +
+                     ' a las ' + horaReserva(r.scheduled_at));
+              cargarReservas();
+            })
+            .catch(function(e){ btn.disabled = false; btn.textContent = 'Confirmar'; avisar(e.message); });
+        });
+        el.appendChild(btn);
+      }
+      caja.appendChild(el);
+    });
   }
 
   // La duracion de franja es del negocio, no nuestra. Si no responde, 60.
@@ -915,14 +1037,15 @@
   }
 
   function mismoDia(iso, d){
-    var f = new Date(String(iso).replace(' ', 'T') + (String(iso).indexOf('Z') < 0 ? 'Z' : ''));
-    if (isNaN(f)) return false;
+    var f = aFecha(iso);
+    if (!f) return false;
     var o = { timeZone:'America/Bogota', year:'numeric', month:'2-digit', day:'2-digit' };
     return f.toLocaleDateString('es-CO', o) === d.toLocaleDateString('es-CO', o);
   }
 
   function minutosEnBogota(iso){
-    var f = new Date(String(iso).replace(' ', 'T') + (String(iso).indexOf('Z') < 0 ? 'Z' : ''));
+    var f = aFecha(iso);
+    if (!f) return 0;
     var t = f.toLocaleTimeString('es-CO', { timeZone:'America/Bogota', hour12:false, hour:'2-digit', minute:'2-digit' }).split(':');
     return Number(t[0]) * 60 + Number(t[1]);
   }
@@ -952,7 +1075,8 @@
       var pend = delDia.filter(function(r){ return r.status === 'pendiente'; }).length;
       var esHoy = fecha.toDateString() === hoy.toDateString();
       var abierto = diaCal && fecha.toDateString() === diaCal.toDateString();
-      h += '<button class="cal-dia'+(esHoy?' hoy':'')+'" type="button" data-dia="'+d+'" aria-pressed="'+(abierto?'true':'false')+'">'+
+      var marca = (delDia.length ? (pend ? ' con-pendientes' : ' con-reservas') : '');
+      h += '<button class="cal-dia'+(esHoy?' hoy':'')+marca+'" type="button" data-dia="'+d+'" aria-pressed="'+(abierto?'true':'false')+'">'+
            '<span>'+d+'</span>'+
            (delDia.length ? '<span class="cuenta'+(pend?' pend':'')+'">'+delDia.length+'</span>' : '')+
            '</button>';
@@ -1021,41 +1145,30 @@
     });
   }
 
-  Array.prototype.forEach.call(document.querySelectorAll('.sw-r'), function(b){
-    b.addEventListener('click', function(){
-      rangoReservas = b.dataset.rango;
-      Array.prototype.forEach.call(document.querySelectorAll('.sw-r'), function(x){
-        x.setAttribute('aria-pressed', x === b ? 'true' : 'false');
-      });
-      cargarReservas();
-    });
-  });
 
-  function pintarAgenda(reservas){
-    var cont = $('agenda');
-    cont.innerHTML = '';
 
-    if (!reservas.length) {
-      cont.innerHTML = '<div class="vacio">' + (
-        rangoReservas === 'hoy'
-          ? 'No hay reservas para hoy.<br>Si tomaste una para otro día, mírala en <b>Próximas</b>.'
-          : rangoReservas === 'proximas'
-            ? 'No hay reservas de hoy en adelante.'
-            : 'Todavía no hay ninguna reserva.'
-      ) + '</div>';
-    } else {
-      reservas.forEach(function(r){ cont.appendChild(tarjetaReserva(r)); });
-    }
 
-    var b = $('badgeReservas');
-    b.textContent = reservas.length;
-    b.hidden = reservas.length === 0;
+
+  /* Lector de fechas unico.
+     Supabase entrega "2026-09-14 14:00:00+00" y Railway entregaba
+     "2026-09-14T14:00:00.000Z". El codigo viejo le pegaba una "Z" al final
+     cuando no la encontraba, y con el formato de Supabase quedaba
+     "...14:00:00+00Z": fecha invalida. Por eso la hora desaparecia de las
+     reservas mientras el resto de los datos si se veia. */
+  function aFecha(iso){
+    if (!iso) return null;
+    var t = String(iso).trim().replace(' ', 'T');
+    if (/[+-]\d{2}$/.test(t)) t += ':00';           // "+00" -> "+00:00"
+    if (!/(Z|[+-]\d{2}:\d{2})$/.test(t)) t += 'Z'; // sin zona: viene en UTC
+    var d = new Date(t);
+    return isNaN(d.getTime()) ? null : d;
   }
 
   function horaReserva(iso){
     if (!iso) return '--:--';
-    var d = new Date(iso.replace(' ','T') + (iso.indexOf('Z')<0?'Z':''));
-    return d.toLocaleTimeString('es-CO', {hour:'2-digit', minute:'2-digit'});
+    var d = aFecha(iso);
+    if (!d) return '--:--';
+    return d.toLocaleTimeString('es-CO', {timeZone:'America/Bogota', hour:'2-digit', minute:'2-digit'});
   }
 
   /* Día de la reserva, o cadena vacía si es hoy. La zona horaria es fija de
@@ -1063,8 +1176,8 @@
      agenda de la cocina un día. */
   function diaReserva(iso){
     if (!iso) return '';
-    var d = new Date(String(iso).replace(' ', 'T') + (String(iso).indexOf('Z') < 0 ? 'Z' : ''));
-    if (isNaN(d)) return '';
+    var d = aFecha(iso);
+    if (!d) return '';
     var opciones = { timeZone:'America/Bogota', day:'numeric', month:'short' };
     var suya = d.toLocaleDateString('es-CO', opciones);
     var hoy = new Date().toLocaleDateString('es-CO', opciones);
@@ -1292,8 +1405,8 @@
   /* Fecha y hora del separador, con el formato de iOS: hoy y ayer se nombran,
      lo más viejo lleva la fecha. */
   function sello(iso){
-    var d = new Date(String(iso).replace(' ', 'T') + (String(iso).indexOf('Z') < 0 ? 'Z' : ''));
-    if (isNaN(d)) return '';
+    var d = aFecha(iso);
+    if (!d) return '';
     var hora = d.toLocaleTimeString('es-CO', {hour:'numeric', minute:'2-digit', timeZone:'America/Bogota'});
     var hoy = new Date();
     var mismoDia = function(a, b){ return a.toDateString() === b.toDateString(); };
@@ -1304,14 +1417,14 @@
   }
 
   function alMomento(iso){
-    var d = new Date(String(iso).replace(' ', 'T') + (String(iso).indexOf('Z') < 0 ? 'Z' : ''));
-    return isNaN(d) ? 0 : d.getTime();
+    var d = aFecha(iso);
+    return d ? d.getTime() : 0;
   }
 
   /* Solo la hora, para el rincón de la burbuja. */
   function soloHora(iso){
-    var d = new Date(String(iso).replace(' ', 'T') + (String(iso).indexOf('Z') < 0 ? 'Z' : ''));
-    if (isNaN(d)) return '';
+    var d = aFecha(iso);
+    if (!d) return '';
     return d.toLocaleTimeString('es-CO', {hour:'numeric', minute:'2-digit', timeZone:'America/Bogota'})
       .replace(/\s?a\.?\s?m\.?/i, ' a.m.').replace(/\s?p\.?\s?m\.?/i, ' p.m.');
   }
