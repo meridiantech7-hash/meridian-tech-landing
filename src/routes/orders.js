@@ -10,6 +10,15 @@ const metaSend = require('../services/metaSend');
 
 const router = express.Router();
 
+// Con el flujo en n8n las ordenes viven en Supabase, no en la base de Railway
+// (ordersSupabase.js). Antes faltaba este puente: un pago confirmado por
+// WhatsApp quedaba en Supabase y la tablet nunca lo mostraba.
+// Con FLUJO_EN_N8N apagado sigue todo como antes.
+const supabaseApp = require('../services/supabaseApp');
+router.use((req, res, next) => (supabaseApp.activo()
+  ? require('./ordersSupabase')(req, res, next)
+  : next()));
+
 /**
  * Órdenes del negocio — lo que ve y mueve la tablet en cocina/mostrador.
  *

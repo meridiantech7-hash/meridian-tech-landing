@@ -57,6 +57,18 @@ async function revisar() {
       emitir(reserva.client_id, r.created_at === r.updated_at ? 'reservation:new' : 'reservation:updated', reserva);
     }
 
+    // Ordenes que crea n8n cuando entra un comprobante de pago. Sin esto la
+    // tablet solo las veia al recargar la pestana, y un pago confirmado por
+    // WhatsApp pasaba desapercibido justo cuando hay que atenderlo.
+    const ordenes = await sb.select('orders', `updated_at=gt.${encodeURIComponent(desde)}&select=*`);
+    for (const o of ordenes) {
+      const clave = `o:${o.id}:${o.updated_at}`;
+      if (sb.yaEmitido(clave)) continue;
+      sb.marcarEmitido(clave);
+      const orden = { ...o, client_id: await sb.aClienteApp(o.client_id) };
+      emitir(orden.client_id, o.created_at === o.updated_at ? 'order:new' : 'order:updated', orden);
+    }
+
     desde = inicio;
   } catch (error) {
     logger.warn('Tablet en vivo: no se pudo revisar Supabase', {
